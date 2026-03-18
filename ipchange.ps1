@@ -33,7 +33,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 function Assert-Windows {
-    if (-not $IsWindows) {
+    if (-not ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT)) {
         throw 'Este script só pode ser executado no Windows, pois depende de Get-NetAdapter/Get-NetIPAddress e netsh.'
     }
 }
@@ -263,7 +263,7 @@ function Set-AdapterIPv4Configuration {
             "gateway=$gatewayValue"
         ) | Out-Null
 
-        if ($ChosenDnsServers -and $ChosenDnsServers.Count -gt 0) {
+        if ($ChosenDnsServers.Count -gt 0) {
             Invoke-Netsh -Arguments @(
                 'interface', 'ipv4', 'set', 'dnsservers',
                 "name=$ChosenAdapterName",
@@ -294,7 +294,10 @@ function Set-AdapterIPv4Configuration {
         }
     }
 
-    for ($attempt = 0; $attempt -lt 10; $attempt++) {
+    $maxVerificationAttempts = 10
+    $verificationRetryDelaySeconds = 2
+
+    for ($attempt = 0; $attempt -lt $maxVerificationAttempts; $attempt++) {
         $currentIp = Get-NetIPAddress -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
             Where-Object { $_.IPAddress -eq $ChosenIPAddress -and $_.PrefixLength -eq $ChosenPrefixLength }
 
@@ -304,7 +307,7 @@ function Set-AdapterIPv4Configuration {
                     Where-Object { $_.NextHop -eq $ChosenDefaultGateway }
 
                 if (-not $defaultRoute) {
-                    Start-Sleep -Seconds 2
+                    Start-Sleep -Seconds $verificationRetryDelaySeconds
                     continue
                 }
             }
@@ -318,7 +321,7 @@ function Set-AdapterIPv4Configuration {
             }
         }
 
-        Start-Sleep -Seconds 2
+        Start-Sleep -Seconds $verificationRetryDelaySeconds
     }
 
     throw "Não foi possível confirmar a alteração do IP para '$ChosenIPAddress/$ChosenPrefixLength' no adaptador '$ChosenAdapterName'."
@@ -332,7 +335,7 @@ if ($ListAdapters) {
 }
 
 if (-not $AdapterName) {
-    $AdapterName = Resolve-AdapterName -SelectedAdapterName $AdapterName
+    $AdapterName = Resolve-AdapterName -SelectedAdapterName $null
 }
 else {
     $null = Resolve-AdapterName -SelectedAdapterName $AdapterName
@@ -353,11 +356,15 @@ if (-not $PSBoundParameters.ContainsKey('PrefixLength')) {
     } -ValidationMessage 'Informe um prefixo entre 0 e 32.')
 }
 
-if (-not $DefaultGateway) {
+if ([string]::IsNullOrWhiteSpace($DefaultGateway)) {
     $DefaultGateway = Read-Host -Prompt 'Digite o gateway padrão (ou deixe em branco para não configurar)'
 }
 elseif (-not (Test-IPv4Address -Address $DefaultGateway)) {
     throw 'O gateway informado é inválido.'
+}
+
+if ([string]::IsNullOrWhiteSpace($DefaultGateway)) {
+    $DefaultGateway = $null
 }
 
 if (-not $DnsServers) {
