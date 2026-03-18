@@ -19,9 +19,16 @@ internal static class Program
             return 1;
         }
 
+        var powerShellExecutable = FindPowerShellExecutable();
+        if (powerShellExecutable is null)
+        {
+            Console.Error.WriteLine("Nenhum executável do PowerShell foi encontrado. Instale o PowerShell 5.1+ ou o PowerShell 7+.");
+            return 1;
+        }
+
         var startInfo = new ProcessStartInfo
         {
-            FileName = "powershell.exe",
+            FileName = powerShellExecutable,
             UseShellExecute = false
         };
 
@@ -45,5 +52,37 @@ internal static class Program
 
         process.WaitForExit();
         return process.ExitCode;
+    }
+
+    private static string? FindPowerShellExecutable()
+    {
+        foreach (var executable in new[] { "pwsh.exe", "powershell.exe" })
+        {
+            if (IsExecutableOnPath(executable))
+            {
+                return executable;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsExecutableOnPath(string executable)
+    {
+        var path = Environment.GetEnvironmentVariable("PATH");
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        foreach (var directory in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (File.Exists(Path.Combine(directory, executable)))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
