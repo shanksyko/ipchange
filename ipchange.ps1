@@ -397,6 +397,7 @@ if ($UseCurrentCredential) {
     return
 }
 
+# Use IPCHANGE_ADMIN_USERNAME/IPCHANGE_ADMIN_PASSWORD apenas na sessão/processo atual e limpe essas variáveis após o uso.
 if (-not $Username) {
     $Username = $env:IPCHANGE_ADMIN_USERNAME
 }
@@ -411,8 +412,8 @@ if (-not $Password) {
     }
 
     if (-not [string]::IsNullOrWhiteSpace($PlainTextPassword)) {
+        Write-Warning 'A senha administrativa está sendo usada em texto puro. Prefira -Password com SecureString quando isso for possível.'
         $Password = ConvertTo-SecureString -String $PlainTextPassword -AsPlainText -Force
-        $PlainTextPassword = $null
     }
     else {
         $Password = Read-Host -Prompt 'Digite a senha do usuário informado' -AsSecureString

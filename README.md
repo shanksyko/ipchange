@@ -13,6 +13,17 @@ Este projeto foi feito em **C#**, chamando o script **PowerShell** `ipchange.ps1
 - PowerShell 5.1+ ou PowerShell 7+
 - Usuário e senha com privilégio administrativo no computador
 
+## Segurança das credenciais
+
+- A forma mais segura disponível neste projeto continua sendo passar `-Password` como `SecureString`
+- Para evitar prompts, você pode usar `-PlainTextPassword` ou as variáveis `IPCHANGE_ADMIN_USERNAME` e `IPCHANGE_ADMIN_PASSWORD`
+- Ambos os caminhos usam senha em texto puro em algum momento, então trate esse uso com cuidado
+- Argumentos de linha de comando podem ficar visíveis em listagens de processo
+- Variáveis de ambiente também ficam em texto puro no processo atual até serem limpas e são herdadas automaticamente pelo processo PowerShell iniciado pelo C#
+- Prefira definir `IPCHANGE_ADMIN_USERNAME` e `IPCHANGE_ADMIN_PASSWORD` apenas no processo/sessão atual, não como variáveis persistentes de usuário ou sistema
+- Mesmo após converter a senha para `SecureString`, o texto puro pode permanecer na memória por algum tempo
+- Se você montar um `SecureString` a partir de uma senha em texto puro por conta própria, essa mesma limitação existe antes da conversão
+
 ## O que o script faz
 
 - lista todos os adaptadores de rede visíveis
@@ -72,7 +83,7 @@ dotnet run -- `
   -DnsServers "1.1.1.1","8.8.8.8"
 ```
 
-> O parâmetro `-PlainTextPassword` evita o prompt, mas expõe a senha na linha de comando. Se puder, prefira usar as variáveis de ambiente `IPCHANGE_ADMIN_USERNAME` e `IPCHANGE_ADMIN_PASSWORD`.
+> O parâmetro `-PlainTextPassword` evita o prompt, mas expõe a senha na linha de comando.
 
 ### Via C# com variáveis de ambiente
 
@@ -86,9 +97,14 @@ dotnet run -- `
   -PrefixLength 24 `
   -DefaultGateway "192.168.0.1" `
   -DnsServers "1.1.1.1","8.8.8.8"
+
+Remove-Item Env:IPCHANGE_ADMIN_USERNAME
+Remove-Item Env:IPCHANGE_ADMIN_PASSWORD
 ```
 
 > Quando as variáveis de ambiente estiverem definidas, o processo iniciado pelo C# herda esses valores e o script não pede usuário nem senha.
+>
+> Depois do uso, limpe essas variáveis para reduzir a exposição da credencial no terminal atual.
 
 ### Via PowerShell
 
