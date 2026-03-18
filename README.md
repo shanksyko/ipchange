@@ -18,6 +18,7 @@ Este projeto foi feito em **C#**, chamando o script **PowerShell** `ipchange.ps1
 - A forma mais segura disponível neste projeto continua sendo passar `-Password` como `SecureString`
 - O usuário padrão é o local `.\support`; para evitar prompt de senha, você pode usar `-PlainTextPassword` ou as variáveis `IPCHANGE_ADMIN_USERNAME` e `IPCHANGE_ADMIN_PASSWORD`
 - Se preferir manter um valor local fixo na máquina, copie `ipchange.local.example.psd1` para `ipchange.local.psd1`; esse arquivo é ignorado pelo Git e pode definir `Username` e `PlainTextPassword`
+- Para máquinas no domínio que precisam continuar usando a conta local `support`, mantenha `Username = '.\support'` no arquivo `ipchange.local.psd1`; o wrapper C# também assume `.\support` automaticamente quando você não informar outro usuário
 - Ambos os caminhos usam senha em texto puro em algum momento, então trate esse uso com cuidado
 - Argumentos de linha de comando podem ficar visíveis em listagens de processo
 - Variáveis de ambiente também ficam em texto puro no processo atual até serem limpas e são herdadas automaticamente pelo processo PowerShell iniciado pelo C#
@@ -165,6 +166,8 @@ Depois edite `ipchange.local.psd1` e preencha sua senha:
 ```
 
 Com esse arquivo presente, o script passa a usar esses valores como padrão e deixa de pedir a senha interativamente.
+
+> Esse é o local recomendado para guardar uma senha fixa por máquina, porque `ipchange.local.psd1` é ignorado pelo Git e não expõe a credencial no repositório.
 
 ## Observações
 

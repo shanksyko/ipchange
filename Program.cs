@@ -13,6 +13,7 @@ internal static class Program
 {
     private static readonly object LogSync = new();
     private static readonly string LogPath = BuildLogPath();
+    private const string DefaultLocalUsername = @".\support";
 
     private static async Task<int> Main(string[] args)
     {
@@ -338,10 +339,9 @@ internal static class Program
 
         if (!request.UseCurrentCredential)
         {
-            if (!string.IsNullOrWhiteSpace(request.Username))
-            {
-                environment["IPCHANGE_ADMIN_USERNAME"] = request.Username.Trim();
-            }
+            environment["IPCHANGE_ADMIN_USERNAME"] = string.IsNullOrWhiteSpace(request.Username)
+                ? DefaultLocalUsername
+                : request.Username.Trim();
 
             if (!string.IsNullOrWhiteSpace(request.Password))
             {
@@ -601,7 +601,7 @@ internal static class Program
         return new DashboardPageModel(
             BuildStatusSnapshot(runtime),
             adapters,
-            request ?? new ApplyRequest { PrefixLength = 24, Username = @".\support" },
+            request ?? new ApplyRequest { PrefixLength = 24, Username = DefaultLocalUsername },
             diagnosticsOutput ?? "Clique em “Diagnosticar permissões” para carregar os detalhes.",
             resultMessage ?? "Aguardando ação.",
             resultIsError,
@@ -1035,7 +1035,7 @@ internal static class Program
             <div class="grid">
               <div class="field">
                 <label for="Username">Usuário administrativo</label>
-                <input id="Username" name="Username" value="{HtmlAttributeEncode(model.Request.Username)}" placeholder=".\support" />
+                <input id="Username" name="Username" value="{HtmlAttributeEncode(model.Request.Username ?? DefaultLocalUsername)}" placeholder=".\support" />
               </div>
               <div class="field">
                 <label for="Password">Senha administrativa</label>
