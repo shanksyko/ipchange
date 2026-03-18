@@ -64,6 +64,7 @@ O script vai:
 ```powershell
 dotnet run -- `
   -Username "DOMINIO\usuario" `
+  -PlainTextPassword "SenhaAdminAqui" `
   -AdapterName "Ethernet" `
   -IPAddress "192.168.0.50" `
   -PrefixLength 24 `
@@ -71,7 +72,23 @@ dotnet run -- `
   -DnsServers "1.1.1.1","8.8.8.8"
 ```
 
-> Quando você precisar informar uma `SecureString` para `-Password`, execute o `ipchange.ps1` diretamente no PowerShell para montar a senha com `Read-Host -AsSecureString`.
+> O parâmetro `-PlainTextPassword` evita o prompt, mas expõe a senha na linha de comando. Se puder, prefira usar as variáveis de ambiente `IPCHANGE_ADMIN_USERNAME` e `IPCHANGE_ADMIN_PASSWORD`.
+
+### Via C# com variáveis de ambiente
+
+```powershell
+$env:IPCHANGE_ADMIN_USERNAME = "DOMINIO\usuario"
+$env:IPCHANGE_ADMIN_PASSWORD = "SenhaAdminAqui"
+
+dotnet run -- `
+  -AdapterName "Ethernet" `
+  -IPAddress "192.168.0.50" `
+  -PrefixLength 24 `
+  -DefaultGateway "192.168.0.1" `
+  -DnsServers "1.1.1.1","8.8.8.8"
+```
+
+> Quando as variáveis de ambiente estiverem definidas, o processo iniciado pelo C# herda esses valores e o script não pede usuário nem senha.
 
 ### Via PowerShell
 
@@ -88,9 +105,23 @@ $password = Read-Host "Senha" -AsSecureString
   -DnsServers "1.1.1.1","8.8.8.8"
 ```
 
+### Via PowerShell sem prompt de senha
+
+```powershell
+.\ipchange.ps1 `
+  -Username "DOMINIO\usuario" `
+  -PlainTextPassword "SenhaAdminAqui" `
+  -AdapterName "Ethernet" `
+  -IPAddress "192.168.0.50" `
+  -PrefixLength 24 `
+  -DefaultGateway "192.168.0.1" `
+  -DnsServers "1.1.1.1","8.8.8.8"
+```
+
 ## Observações
 
 - o executável C# apenas orquestra a chamada do `ipchange.ps1`
 - execute o script em um host Windows
 - o usuário informado precisa ter permissão administrativa
+- você pode evitar o prompt de credencial usando `-Username` com `-PlainTextPassword` ou com `IPCHANGE_ADMIN_USERNAME` + `IPCHANGE_ADMIN_PASSWORD`
 - para simular a alteração sem aplicar, use `-WhatIf`

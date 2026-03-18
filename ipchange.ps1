@@ -7,6 +7,9 @@ param(
     [SecureString]$Password,
 
     [Parameter()]
+    [string]$PlainTextPassword,
+
+    [Parameter()]
     [string]$AdapterName,
 
     [Parameter()]
@@ -395,11 +398,25 @@ if ($UseCurrentCredential) {
 }
 
 if (-not $Username) {
+    $Username = $env:IPCHANGE_ADMIN_USERNAME
+}
+
+if (-not $Username) {
     $Username = Read-RequiredValue -Prompt 'Digite o usuário com permissão administrativa'
 }
 
 if (-not $Password) {
-    $Password = Read-Host -Prompt 'Digite a senha do usuário informado' -AsSecureString
+    if ([string]::IsNullOrWhiteSpace($PlainTextPassword)) {
+        $PlainTextPassword = $env:IPCHANGE_ADMIN_PASSWORD
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($PlainTextPassword)) {
+        $Password = ConvertTo-SecureString -String $PlainTextPassword -AsPlainText -Force
+        $PlainTextPassword = $null
+    }
+    else {
+        $Password = Read-Host -Prompt 'Digite a senha do usuário informado' -AsSecureString
+    }
 }
 
 $credential = [pscredential]::new($Username, $Password)
