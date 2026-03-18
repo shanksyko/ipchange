@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Hosting;
@@ -12,6 +13,7 @@ internal static class Program
 {
     private static readonly object LogSync = new();
     private static readonly string LogPath = BuildLogPath();
+    private const string DefaultLocalUsername = ".\\support";
 
     private static async Task<int> Main(string[] args)
     {
@@ -100,7 +102,74 @@ internal static class Program
         var app = builder.Build();
         app.Urls.Add(url);
 
-        app.MapGet("/", () => Results.Content(UserInterfaceHtml, "text/html; charset=utf-8"));
+        app.MapGet("/", async () =>
+        {
+            var model = await BuildDashboardPageModelAsync();
+            return Results.Content(RenderDashboardHtml(model), "text/html; charset=utf-8");
+        });
+
+        app.MapPost("/actions/adapters", async (HttpRequest request) =>
+        {
+            var form = await ReadApplyRequestAsync(request);
+            var model = await BuildDashboardPageModelAsync(
+                form,
+                resultMessage: "Adaptadores atualizados.",
+                resultOutput: "A lista de adaptadores foi recarregada pelo servidor C#.");
+            return Results.Content(RenderDashboardHtml(model), "text/html; charset=utf-8");
+        });
+
+        app.MapPost("/actions/diagnostics", async (HttpRequest request) =>
+        {
+            var form = await ReadApplyRequestAsync(request);
+            var result = await InvokePowerShellAsync(new[] { "-DiagnosticsJson" });
+            var output = FormatJsonOrText(result.StandardOutput, result.StandardError, "Clique em “Diagnosticar permissões” para carregar os detalhes.");
+            var model = await BuildDashboardPageModelAsync(
+                form,
+                diagnosticsOutput: output,
+                resultMessage: result.ExitCode == 0 ? "Diagnóstico executado com sucesso." : "Falha ao executar o diagnóstico.",
+                resultIsError: result.ExitCode != 0,
+                resultOutput: output);
+            return Results.Content(RenderDashboardHtml(model), "text/html; charset=utf-8");
+        });
+
+        app.MapPost("/actions/logs", async (HttpRequest request) =>
+        {
+            var form = await ReadApplyRequestAsync(request);
+            var model = await BuildDashboardPageModelAsync(
+                form,
+                resultMessage: "Logs atualizados.",
+                resultOutput: "O conteúdo do log foi recarregado pelo servidor C#.");
+            return Results.Content(RenderDashboardHtml(model), "text/html; charset=utf-8");
+        });
+
+        app.MapPost("/actions/apply", async (HttpRequest request) =>
+        {
+            var form = await ReadApplyRequestAsync(request);
+            var validationError = ValidateApplyRequest(form);
+            if (validationError is not null)
+            {
+                var invalidModel = await BuildDashboardPageModelAsync(
+                    form,
+                    resultMessage: validationError,
+                    resultIsError: true,
+                    resultOutput: "Corrija os campos destacados e tente novamente.");
+                return Results.Content(RenderDashboardHtml(invalidModel), "text/html; charset=utf-8");
+            }
+
+            var arguments = BuildApplyArguments(form);
+            var environment = BuildEnvironmentVariables(form);
+            var result = await InvokePowerShellAsync(arguments, environment);
+            var output = FormatJsonOrText(
+                result.StandardOutput,
+                result.StandardError,
+                "Execução concluída sem saída textual.");
+            var model = await BuildDashboardPageModelAsync(
+                form with { Password = string.Empty },
+                resultMessage: result.ExitCode == 0 ? $"Configuração aplicada com sucesso. Log: {result.LogPath}" : "Falha ao aplicar a configuração.",
+                resultIsError: result.ExitCode != 0,
+                resultOutput: output);
+            return Results.Content(RenderDashboardHtml(model), "text/html; charset=utf-8");
+        });
 
         app.MapGet("/api/status", () =>
         {
@@ -270,10 +339,9 @@ internal static class Program
 
         if (!request.UseCurrentCredential)
         {
-            if (!string.IsNullOrWhiteSpace(request.Username))
-            {
-                environment["IPCHANGE_ADMIN_USERNAME"] = request.Username.Trim();
-            }
+            environment["IPCHANGE_ADMIN_USERNAME"] = string.IsNullOrWhiteSpace(request.Username)
+                ? DefaultLocalUsername
+                : request.Username.Trim();
 
             if (!string.IsNullOrWhiteSpace(request.Password))
             {
@@ -517,7 +585,151 @@ internal static class Program
         return string.Join(' ', sanitized);
     }
 
-    private static readonly string UserInterfaceHtml = """
+    private static async Task<DashboardPageModel> BuildDashboardPageModelAsync(
+        ApplyRequest? request = null,
+        string? diagnosticsOutput = null,
+        string? resultMessage = null,
+        bool resultIsError = false,
+        string? resultOutput = null)
+    {
+        var runtime = ResolveRuntime();
+        var adapterResult = await InvokePowerShellAsync(new[] { "-ListAdaptersJson" });
+        var adapters = adapterResult.ExitCode == 0
+            ? ParseAdapters(adapterResult.StandardOutput)
+            : Array.Empty<AdapterOption>();
+
+        return new DashboardPageModel(
+            BuildStatusSnapshot(runtime),
+            adapters,
+            request ?? CreateDefaultApplyRequest(),
+            diagnosticsOutput ?? "Clique em “Diagnosticar permissões” para carregar os detalhes.",
+            resultMessage ?? "Aguardando ação.",
+            resultIsError,
+            resultOutput ?? "Toda a interface abaixo é renderizada diretamente em C#, sem depender de TypeScript no navegador.",
+            ReadLogTail(LogPath, 250),
+            adapterResult.ExitCode == 0 ? null : FormatJsonOrText(adapterResult.StandardOutput, adapterResult.StandardError, "Não foi possível carregar os adaptadores."));
+    }
+
+    private static StatusSnapshot BuildStatusSnapshot(RuntimeResolution runtime)
+    {
+        return new StatusSnapshot(
+            OperatingSystem.IsWindows(),
+            $"{Environment.UserDomainName}\\{Environment.UserName}",
+            runtime.PowerShellExecutable,
+            runtime.ScriptPath,
+            runtime.IsValid,
+            runtime.ErrorMessage,
+            LogPath);
+    }
+
+    private static IReadOnlyList<AdapterOption> ParseAdapters(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return Array.Empty<AdapterOption>();
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind == JsonValueKind.Array)
+            {
+                return document.RootElement
+                    .EnumerateArray()
+                    .Select(BuildAdapterOption)
+                    .Where(option => !string.IsNullOrWhiteSpace(option.Name))
+                    .ToArray();
+            }
+
+            if (document.RootElement.ValueKind == JsonValueKind.Object)
+            {
+                var single = BuildAdapterOption(document.RootElement);
+                return string.IsNullOrWhiteSpace(single.Name) ? Array.Empty<AdapterOption>() : new[] { single };
+            }
+        }
+        catch (JsonException ex)
+        {
+            Log("WARN", $"Não foi possível interpretar a lista de adaptadores: {ex.Message}");
+        }
+
+        return Array.Empty<AdapterOption>();
+    }
+
+    private static AdapterOption BuildAdapterOption(JsonElement element)
+    {
+        var name = element.TryGetProperty("Name", out var nameElement) ? nameElement.GetString() : null;
+        var status = element.TryGetProperty("Status", out var statusElement) ? statusElement.GetString() : null;
+
+        int? interfaceIndex = null;
+        if (element.TryGetProperty("InterfaceIndex", out var indexElement))
+        {
+            if (indexElement.ValueKind == JsonValueKind.Number && indexElement.TryGetInt32(out var numericIndex))
+            {
+                interfaceIndex = numericIndex;
+            }
+            else if (indexElement.ValueKind == JsonValueKind.String &&
+                     int.TryParse(indexElement.GetString(), out var stringIndex))
+            {
+                interfaceIndex = stringIndex;
+            }
+        }
+
+        return new AdapterOption(name, interfaceIndex, status);
+    }
+
+    private static async Task<ApplyRequest> ReadApplyRequestAsync(HttpRequest request)
+    {
+        var form = await request.ReadFormAsync();
+        return new ApplyRequest
+        {
+            Username = ReadFormValue(form, "Username"),
+            Password = ReadFormValue(form, "Password"),
+            AdapterName = ReadFormValue(form, "AdapterName"),
+            IPAddress = ReadFormValue(form, "IPAddress"),
+            PrefixLength = int.TryParse(ReadFormValue(form, "PrefixLength"), out var prefixLength) ? prefixLength : -1,
+            DefaultGateway = ReadFormValue(form, "DefaultGateway"),
+            DnsServers = ReadFormValue(form, "DnsServers"),
+            UseCurrentCredential = form.ContainsKey("UseCurrentCredential")
+        };
+    }
+
+    private static string? ReadFormValue(IFormCollection form, string key)
+    {
+        if (!form.TryGetValue(key, out var value))
+        {
+            return null;
+        }
+
+        var text = value.ToString();
+        return string.IsNullOrWhiteSpace(text) ? null : text;
+    }
+
+    private static string FormatJsonOrText(string? output, string? error, string emptyFallback)
+    {
+        var combined = string.Join(
+            Environment.NewLine + Environment.NewLine,
+            new[] { output?.Trim(), error?.Trim() }.Where(value => !string.IsNullOrWhiteSpace(value)));
+
+        if (string.IsNullOrWhiteSpace(combined))
+        {
+            return emptyFallback;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(combined);
+            return JsonSerializer.Serialize(document.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch (JsonException)
+        {
+            return combined;
+        }
+    }
+
+    private static string RenderDashboardHtml(DashboardPageModel model)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("""
 <!doctype html>
 <html lang="pt-BR">
 <head>
@@ -534,14 +746,12 @@ internal static class Program
       --text: #e2e8f0;
       --muted: #94a3b8;
       --accent: #38bdf8;
-      --accent-2: #22c55e;
       --danger: #fb7185;
       --shadow: 0 24px 60px rgba(15, 23, 42, 0.45);
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
 
     * { box-sizing: border-box; }
-
     body {
       margin: 0;
       min-height: 100vh;
@@ -581,10 +791,9 @@ internal static class Program
       font-size: clamp(2rem, 4vw, 3rem);
     }
 
-    .hero p {
+    .hero p, .muted {
       margin: 0;
       color: var(--muted);
-      max-width: 740px;
       line-height: 1.6;
     }
 
@@ -600,39 +809,32 @@ internal static class Program
       font-weight: 600;
     }
 
+    .panel { padding: 24px; }
+    .panel h2 { margin: 0 0 18px; font-size: 1.1rem; }
+
+    .cards, .grid {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    }
+
     .layout {
       display: grid;
       gap: 20px;
-      grid-template-columns: 1.25fr 0.95fr;
+      grid-template-columns: 1.2fr 0.9fr;
     }
 
-    .panel {
-      padding: 24px;
-    }
-
-    .panel h2 {
-      margin: 0 0 18px;
-      font-size: 1.1rem;
-    }
-
-    .cards {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 14px;
-    }
-
-    .card {
+    .card, fieldset {
       padding: 16px;
       border-radius: 18px;
       background: var(--panel-soft);
       border: 1px solid var(--line);
     }
 
-    .card strong {
-      display: block;
-      margin-top: 6px;
-      font-size: 1rem;
-      word-break: break-word;
+    fieldset {
+      margin: 0;
+      display: grid;
+      gap: 14px;
     }
 
     .label {
@@ -642,16 +844,14 @@ internal static class Program
       letter-spacing: 0.08em;
     }
 
-    form {
-      display: grid;
-      gap: 14px;
+    .card strong {
+      display: block;
+      margin-top: 6px;
+      font-size: 1rem;
+      word-break: break-word;
     }
 
-    .grid {
-      display: grid;
-      gap: 14px;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
+    form { display: grid; gap: 14px; }
 
     .field {
       display: grid;
@@ -671,20 +871,9 @@ internal static class Program
       border-radius: 14px;
       padding: 13px 14px;
       outline: none;
-      transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
     }
 
-    .field input:focus, .field select:focus, .field textarea:focus {
-      border-color: rgba(56, 189, 248, 0.9);
-      box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.15);
-    }
-
-    .field textarea {
-      min-height: 92px;
-      resize: vertical;
-    }
-
-    .actions, .toolbar {
+    .toolbar, .actions {
       display: flex;
       flex-wrap: wrap;
       gap: 12px;
@@ -696,11 +885,7 @@ internal static class Program
       padding: 13px 16px;
       font-weight: 700;
       cursor: pointer;
-      transition: transform 160ms ease, opacity 160ms ease, box-shadow 160ms ease;
     }
-
-    button:hover { transform: translateY(-1px); }
-    button:disabled { opacity: 0.65; cursor: wait; transform: none; }
 
     .primary {
       background: linear-gradient(135deg, #38bdf8, #2563eb);
@@ -714,15 +899,18 @@ internal static class Program
       border: 1px solid rgba(148, 163, 184, 0.18);
     }
 
-    .success {
-      background: linear-gradient(135deg, #22c55e, #16a34a);
-      color: white;
-      box-shadow: 0 14px 30px rgba(22, 163, 74, 0.28);
+    .status {
+      border-left: 4px solid var(--accent);
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: rgba(56, 189, 248, 0.08);
+      color: #e0f2fe;
     }
 
-    .hint, .muted {
-      color: var(--muted);
-      line-height: 1.55;
+    .status.error {
+      border-left-color: var(--danger);
+      background: rgba(251, 113, 133, 0.08);
+      color: #ffe4e6;
     }
 
     .mono {
@@ -740,115 +928,126 @@ internal static class Program
       overflow: auto;
     }
 
-    .status {
-      border-left: 4px solid var(--accent);
-      padding: 14px 16px;
-      border-radius: 16px;
-      background: rgba(56, 189, 248, 0.08);
-      color: #e0f2fe;
-    }
-
-    .status.error {
-      border-left-color: var(--danger);
-      background: rgba(251, 113, 133, 0.08);
-      color: #ffe4e6;
-    }
-
-    .toggle {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 12px 14px;
-      border-radius: 14px;
-      background: rgba(15, 23, 42, 0.58);
-      border: 1px solid var(--line);
-      font-weight: 600;
-    }
-
-    .toggle input {
-      width: 18px;
-      height: 18px;
-      accent-color: var(--accent);
+    .hint {
+      color: var(--muted);
+      line-height: 1.55;
     }
 
     @media (max-width: 980px) {
       .layout { grid-template-columns: 1fr; }
-      .grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
   <main class="page">
+""");
+
+        builder.AppendLine($"""
     <section class="hero">
       <div>
-        <div class="badge">✨ Interface gráfica local do ipchange</div>
-        <h1>Configuração de IP com visual mais amigável</h1>
-        <p>Selecione o adaptador, informe IPv4, prefixo, gateway e DNS, rode um diagnóstico de permissão e acompanhe o log técnico da execução no mesmo lugar.</p>
+        <div class="badge">✨ ipchange em C# direto</div>
+        <h1>Configuração de IP em app local do Windows</h1>
+        <p>Esta interface é gerada diretamente em C#, sem TypeScript no navegador. O formulário abaixo reaproveita a lógica existente do PowerShell para listar adaptadores, diagnosticar permissões e aplicar IPv4.</p>
       </div>
-      <div class="hint" id="logPathHero">Preparando interface...</div>
+      <div class="hint">Log atual: {HtmlEncode(model.Status.LogPath)}</div>
     </section>
+""");
 
+        builder.AppendLine("""
     <section class="panel">
       <h2>Resumo do ambiente</h2>
-      <div class="cards" id="statusCards"></div>
-      <div id="statusMessage" class="status" style="margin-top: 16px;">Carregando status do aplicativo...</div>
-    </section>
+      <div class="cards">
+""");
 
+        AppendCard(builder, "Sistema operacional", model.Status.IsWindows ? "Windows" : "Não Windows");
+        AppendCard(builder, "Usuário atual", model.Status.CurrentUser);
+        AppendCard(builder, "PowerShell", model.Status.PowerShellExecutable ?? "Não encontrado");
+        AppendCard(builder, "Script", model.Status.ScriptPath ?? "Não encontrado");
+
+        builder.AppendLine("""
+      </div>
+""");
+
+        builder.AppendLine($"""
+      <div class="status{(model.Status.IsReady ? string.Empty : " error")}" style="margin-top: 16px;">
+        {HtmlEncode(model.Status.IsReady
+            ? "Ambiente carregado. A interface agora depende apenas de renderização em C# no servidor local."
+            : model.Status.ErrorMessage ?? "O aplicativo ainda não está pronto para executar o script.")}
+      </div>
+""");
+
+        builder.AppendLine("""
+    </section>
     <section class="layout">
       <section class="panel">
         <h2>Alterar configuração IPv4</h2>
-        <form id="configForm">
+""");
+
+        if (!string.IsNullOrWhiteSpace(model.AdapterMessage))
+        {
+            builder.AppendLine($"""
+        <div class="status error" style="margin-bottom: 16px;">{HtmlEncode(model.AdapterMessage)}</div>
+""");
+        }
+
+        builder.AppendLine($"""
+        <form method="post" action="/actions/apply">
           <div class="toolbar">
-            <button class="secondary" type="button" id="loadAdaptersButton">Atualizar adaptadores</button>
-            <button class="secondary" type="button" id="diagnosticsButton">Diagnosticar permissões</button>
-            <button class="secondary" type="button" id="refreshLogsButton">Atualizar logs</button>
+            <button class="secondary" type="submit" formaction="/actions/adapters">Atualizar adaptadores</button>
+            <button class="secondary" type="submit" formaction="/actions/diagnostics">Diagnosticar permissões</button>
+            <button class="secondary" type="submit" formaction="/actions/logs">Atualizar logs</button>
           </div>
 
           <div class="field">
-            <label for="adapterName">Adaptador</label>
-            <select id="adapterName" required>
+            <label for="AdapterName">Adaptador</label>
+            <select id="AdapterName" name="AdapterName" required>
               <option value="">Selecione um adaptador</option>
+              {RenderAdapterOptions(model.Adapters, model.Request.AdapterName)}
             </select>
           </div>
 
           <div class="grid">
             <div class="field">
-              <label for="ipAddress">IPv4</label>
-              <input id="ipAddress" placeholder="192.168.0.50" required />
+              <label for="IPAddress">IPv4</label>
+              <input id="IPAddress" name="IPAddress" value="{HtmlAttributeEncode(model.Request.IPAddress)}" placeholder="192.168.0.50" required />
             </div>
             <div class="field">
-              <label for="prefixLength">Prefixo</label>
-              <input id="prefixLength" type="number" min="0" max="32" value="24" required />
+              <label for="PrefixLength">Prefixo</label>
+              <input id="PrefixLength" name="PrefixLength" type="number" min="0" max="32" value="{HtmlAttributeEncode(model.Request.PrefixLength <= 0 ? "24" : model.Request.PrefixLength.ToString())}" required />
             </div>
             <div class="field">
-              <label for="defaultGateway">Gateway padrão</label>
-              <input id="defaultGateway" placeholder="192.168.0.1" />
+              <label for="DefaultGateway">Gateway padrão</label>
+              <input id="DefaultGateway" name="DefaultGateway" value="{HtmlAttributeEncode(model.Request.DefaultGateway)}" placeholder="192.168.0.1" />
             </div>
             <div class="field">
-              <label for="dnsServers">DNS</label>
-              <input id="dnsServers" placeholder="1.1.1.1, 8.8.8.8" />
+              <label for="DnsServers">DNS</label>
+              <input id="DnsServers" name="DnsServers" value="{HtmlAttributeEncode(model.Request.DnsServers)}" placeholder="1.1.1.1, 8.8.8.8" />
             </div>
           </div>
 
-          <label class="toggle">
-            <input id="useCurrentCredential" type="checkbox" />
+          <label class="status" style="display: flex; gap: 10px; align-items: center;">
+            <input id="UseCurrentCredential" name="UseCurrentCredential" type="checkbox" {(model.Request.UseCurrentCredential ? "checked" : string.Empty)} />
             Usar a credencial atual em vez de fornecer usuário e senha administrativa
           </label>
 
-          <div class="grid" id="credentialFields">
-            <div class="field">
-              <label for="username">Usuário administrativo</label>
-              <input id="username" placeholder=".\support" />
+          <fieldset {(model.Request.UseCurrentCredential ? "disabled" : string.Empty)}>
+            <legend class="label">Credenciais administrativas</legend>
+            <div class="grid">
+              <div class="field">
+                <label for="Username">Usuário administrativo</label>
+                <input id="Username" name="Username" value="{HtmlAttributeEncode(model.Request.Username ?? DefaultLocalUsername)}" placeholder="{HtmlAttributeEncode(DefaultLocalUsername)}" />
+              </div>
+              <div class="field">
+                <label for="Password">Senha administrativa</label>
+                <input id="Password" name="Password" type="password" placeholder="Digite a senha" />
+              </div>
             </div>
-            <div class="field">
-              <label for="password">Senha administrativa</label>
-              <input id="password" type="password" placeholder="Digite a senha" />
-            </div>
-          </div>
+            <p class="muted">Por segurança, a senha nunca é preenchida novamente após um POST.</p>
+          </fieldset>
 
           <div class="actions">
-            <button class="primary" type="submit" id="applyButton">Aplicar configuração</button>
-            <button class="secondary" type="reset" id="clearButton">Limpar campos</button>
+            <button class="primary" type="submit">Aplicar configuração</button>
+            <button class="secondary" type="reset">Limpar campos</button>
           </div>
         </form>
       </section>
@@ -856,209 +1055,93 @@ internal static class Program
       <section class="panel">
         <h2>Diagnóstico e retorno técnico</h2>
         <p class="muted">Use os diagnósticos para verificar Windows, PowerShell, conta atual, privilégios administrativos e possíveis pistas de permissão.</p>
-        <pre class="mono" id="diagnosticsOutput">Clique em “Diagnosticar permissões” para carregar os detalhes.</pre>
-        <div id="resultMessage" class="status" style="margin-top: 16px;">Aguardando ação.</div>
-        <pre class="mono" id="resultOutput" style="margin-top: 16px;">Saída da execução aparecerá aqui.</pre>
+        <pre class="mono">{HtmlEncode(model.DiagnosticsOutput)}</pre>
+        <div class="status{(model.ResultIsError ? " error" : string.Empty)}" style="margin-top: 16px;">{HtmlEncode(model.ResultMessage)}</div>
+        <pre class="mono" style="margin-top: 16px;">{HtmlEncode(model.ResultOutput)}</pre>
       </section>
     </section>
 
     <section class="panel">
       <h2>Log de verificação</h2>
       <p class="muted">O log abaixo reúne o fluxo do wrapper C# e do script PowerShell para facilitar a análise de falhas, especialmente de permissão.</p>
-      <pre class="mono" id="logOutput">Nenhum log carregado ainda.</pre>
+      <pre class="mono">{HtmlEncode(model.LogContent)}</pre>
     </section>
   </main>
-
-  <script>
-    const statusCards = document.getElementById('statusCards');
-    const statusMessage = document.getElementById('statusMessage');
-    const diagnosticsOutput = document.getElementById('diagnosticsOutput');
-    const resultMessage = document.getElementById('resultMessage');
-    const resultOutput = document.getElementById('resultOutput');
-    const logOutput = document.getElementById('logOutput');
-    const logPathHero = document.getElementById('logPathHero');
-    const credentialFields = document.getElementById('credentialFields');
-    const useCurrentCredential = document.getElementById('useCurrentCredential');
-    const form = document.getElementById('configForm');
-    const adapterName = document.getElementById('adapterName');
-    const applyButton = document.getElementById('applyButton');
-    const loadAdaptersButton = document.getElementById('loadAdaptersButton');
-    const diagnosticsButton = document.getElementById('diagnosticsButton');
-    const refreshLogsButton = document.getElementById('refreshLogsButton');
-
-    function setMessage(target, text, isError = false) {
-      target.textContent = text;
-      target.classList.toggle('error', isError);
-    }
-
-    function setBusy(button, busy) {
-      if (!button) return;
-      button.disabled = busy;
-    }
-
-    function renderCards(items) {
-      statusCards.innerHTML = '';
-      for (const [label, value] of items) {
-        const card = document.createElement('article');
-        card.className = 'card';
-        card.innerHTML = `<span class="label">${label}</span><strong>${value ?? '—'}</strong>`;
-        statusCards.appendChild(card);
-      }
-    }
-
-    function toggleCredentialFields() {
-      credentialFields.style.display = useCurrentCredential.checked ? 'none' : 'grid';
-    }
-
-    async function readJson(response) {
-      const text = await response.text();
-      if (!text) {
-        return null;
-      }
-      try {
-        return JSON.parse(text);
-      } catch {
-        return text;
-      }
-    }
-
-    async function loadStatus() {
-      const response = await fetch('/api/status');
-      const data = await response.json();
-      renderCards([
-        ['Sistema operacional', data.isWindows ? 'Windows' : 'Não Windows'],
-        ['Usuário atual', data.currentUser],
-        ['PowerShell', data.powerShellExecutable || 'Não encontrado'],
-        ['Script', data.scriptPath || 'Não encontrado']
-      ]);
-      logPathHero.textContent = `Log atual: ${data.logPath}`;
-      setMessage(
-        statusMessage,
-        data.isReady
-          ? 'Ambiente carregado. Você já pode verificar adaptadores, diagnósticos e logs.'
-          : (data.errorMessage || 'O aplicativo ainda não está pronto para executar o script.'),
-        !data.isReady
-      );
-    }
-
-    async function loadAdapters() {
-      setBusy(loadAdaptersButton, true);
-      try {
-        const response = await fetch('/api/adapters');
-        const data = await readJson(response);
-        if (!response.ok) {
-          throw new Error(data?.error || data?.message || 'Não foi possível listar os adaptadores.');
-        }
-
-        const items = Array.isArray(data) ? data : [data];
-        adapterName.innerHTML = '<option value="">Selecione um adaptador</option>';
-        for (const item of items) {
-          if (!item?.Name) continue;
-          const option = document.createElement('option');
-          option.value = item.Name;
-          option.textContent = `${item.InterfaceIndex} · ${item.Name} (${item.Status || 'sem status'})`;
-          adapterName.appendChild(option);
-        }
-
-        setMessage(resultMessage, `${items.length} adaptador(es) carregado(s) para seleção.`);
-      } catch (error) {
-        setMessage(resultMessage, error.message, true);
-      } finally {
-        setBusy(loadAdaptersButton, false);
-      }
-    }
-
-    async function runDiagnostics() {
-      setBusy(diagnosticsButton, true);
-      try {
-        const response = await fetch('/api/diagnostics');
-        const data = await readJson(response);
-        if (!response.ok) {
-          throw new Error(data?.error || data?.message || 'Falha ao executar o diagnóstico.');
-        }
-
-        diagnosticsOutput.textContent = JSON.stringify(data, null, 2);
-        setMessage(resultMessage, 'Diagnóstico executado com sucesso.');
-      } catch (error) {
-        diagnosticsOutput.textContent = String(error.message || error);
-        setMessage(resultMessage, diagnosticsOutput.textContent, true);
-      } finally {
-        setBusy(diagnosticsButton, false);
-      }
-    }
-
-    async function refreshLogs() {
-      setBusy(refreshLogsButton, true);
-      try {
-        const response = await fetch('/api/logs');
-        const data = await response.json();
-        logOutput.textContent = data.content || 'Nenhum log disponível.';
-        logPathHero.textContent = `Log atual: ${data.logPath}`;
-      } finally {
-        setBusy(refreshLogsButton, false);
-      }
-    }
-
-    async function applyConfiguration(event) {
-      event.preventDefault();
-      setBusy(applyButton, true);
-      const payload = {
-        adapterName: adapterName.value,
-        ipAddress: document.getElementById('ipAddress').value,
-        prefixLength: Number(document.getElementById('prefixLength').value),
-        defaultGateway: document.getElementById('defaultGateway').value,
-        dnsServers: document.getElementById('dnsServers').value,
-        useCurrentCredential: useCurrentCredential.checked,
-        username: document.getElementById('username').value,
-        password: document.getElementById('password').value
-      };
-
-      try {
-        const response = await fetch('/api/apply', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-
-        const data = await response.json();
-        const combinedOutput = [data.output, data.error].filter(Boolean).join('\n\n');
-        resultOutput.textContent = combinedOutput || 'Execução concluída sem saída textual.';
-        setMessage(
-          resultMessage,
-          response.ok
-            ? `Configuração aplicada com sucesso. Log: ${data.logPath}`
-            : (data.error || data.message || 'Falha ao aplicar a configuração.'),
-          !response.ok
-        );
-        await refreshLogs();
-      } catch (error) {
-        resultOutput.textContent = String(error.message || error);
-        setMessage(resultMessage, resultOutput.textContent, true);
-      } finally {
-        setBusy(applyButton, false);
-      }
-    }
-
-    useCurrentCredential.addEventListener('change', toggleCredentialFields);
-    loadAdaptersButton.addEventListener('click', loadAdapters);
-    diagnosticsButton.addEventListener('click', runDiagnostics);
-    refreshLogsButton.addEventListener('click', refreshLogs);
-    form.addEventListener('submit', applyConfiguration);
-    form.addEventListener('reset', () => setTimeout(toggleCredentialFields, 0));
-
-    toggleCredentialFields();
-    loadStatus();
-    refreshLogs();
-  </script>
 </body>
 </html>
-""";
+""");
+
+        return builder.ToString();
+    }
+
+    private static void AppendCard(StringBuilder builder, string label, string value)
+    {
+        builder.AppendLine($"""
+        <article class="card">
+          <span class="label">{HtmlEncode(label)}</span>
+          <strong>{HtmlEncode(value)}</strong>
+        </article>
+""");
+    }
+
+    private static string RenderAdapterOptions(IReadOnlyList<AdapterOption> adapters, string? selectedAdapter)
+    {
+        var builder = new StringBuilder();
+        var selectedExists = false;
+
+        foreach (var adapter in adapters)
+        {
+            var isSelected = string.Equals(adapter.Name, selectedAdapter, StringComparison.OrdinalIgnoreCase);
+            selectedExists |= isSelected;
+            var indexText = adapter.InterfaceIndex?.ToString() ?? "—";
+            builder.AppendLine($"""<option value="{HtmlAttributeEncode(adapter.Name)}" {(isSelected ? "selected" : string.Empty)}>{HtmlEncode($"{indexText} · {adapter.Name} ({adapter.Status ?? "sem status"})")}</option>""");
+        }
+
+        if (!selectedExists && !string.IsNullOrWhiteSpace(selectedAdapter))
+        {
+            builder.AppendLine($"""<option value="{HtmlAttributeEncode(selectedAdapter)}" selected>{HtmlEncode(selectedAdapter)}</option>""");
+        }
+
+        return builder.ToString();
+    }
+
+    private static string HtmlEncode(string? value) => WebUtility.HtmlEncode(value ?? string.Empty);
+
+    private static string HtmlAttributeEncode(string? value) => WebUtility.HtmlEncode(value ?? string.Empty);
+
+    private static ApplyRequest CreateDefaultApplyRequest() => new()
+    {
+        PrefixLength = 24,
+        Username = DefaultLocalUsername
+    };
 
     private sealed record RuntimeResolution(bool IsValid, string? ScriptPath, string? PowerShellExecutable, string? ErrorMessage);
 
+    private sealed record StatusSnapshot(
+        bool IsWindows,
+        string CurrentUser,
+        string? PowerShellExecutable,
+        string? ScriptPath,
+        bool IsReady,
+        string? ErrorMessage,
+        string LogPath);
+
+    private sealed record AdapterOption(string? Name, int? InterfaceIndex, string? Status);
+
+    private sealed record DashboardPageModel(
+        StatusSnapshot Status,
+        IReadOnlyList<AdapterOption> Adapters,
+        ApplyRequest Request,
+        string DiagnosticsOutput,
+        string ResultMessage,
+        bool ResultIsError,
+        string ResultOutput,
+        string LogContent,
+        string? AdapterMessage);
+
     private sealed record PowerShellRunResult(int ExitCode, string StandardOutput, string StandardError, string LogPath);
 
-    private sealed class ApplyRequest
+    private sealed record ApplyRequest
     {
         public string? Username { get; init; }
         public string? Password { get; init; }
