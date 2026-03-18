@@ -13,7 +13,7 @@ internal static class Program
 {
     private static readonly object LogSync = new();
     private static readonly string LogPath = BuildLogPath();
-    private const string DefaultLocalUsername = @".\support";
+    private const string DefaultLocalUsername = ".\\support";
 
     private static async Task<int> Main(string[] args)
     {
@@ -601,7 +601,7 @@ internal static class Program
         return new DashboardPageModel(
             BuildStatusSnapshot(runtime),
             adapters,
-            request ?? new ApplyRequest { PrefixLength = 24, Username = DefaultLocalUsername },
+            request ?? CreateDefaultApplyRequest(),
             diagnosticsOutput ?? "Clique em “Diagnosticar permissões” para carregar os detalhes.",
             resultMessage ?? "Aguardando ação.",
             resultIsError,
@@ -1035,7 +1035,7 @@ internal static class Program
             <div class="grid">
               <div class="field">
                 <label for="Username">Usuário administrativo</label>
-                <input id="Username" name="Username" value="{HtmlAttributeEncode(model.Request.Username ?? DefaultLocalUsername)}" placeholder=".\support" />
+                <input id="Username" name="Username" value="{HtmlAttributeEncode(model.Request.Username ?? DefaultLocalUsername)}" placeholder="{HtmlAttributeEncode(DefaultLocalUsername)}" />
               </div>
               <div class="field">
                 <label for="Password">Senha administrativa</label>
@@ -1108,6 +1108,12 @@ internal static class Program
     private static string HtmlEncode(string? value) => WebUtility.HtmlEncode(value ?? string.Empty);
 
     private static string HtmlAttributeEncode(string? value) => WebUtility.HtmlEncode(value ?? string.Empty);
+
+    private static ApplyRequest CreateDefaultApplyRequest() => new()
+    {
+        PrefixLength = 24,
+        Username = DefaultLocalUsername
+    };
 
     private sealed record RuntimeResolution(bool IsValid, string? ScriptPath, string? PowerShellExecutable, string? ErrorMessage);
 
