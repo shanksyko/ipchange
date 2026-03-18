@@ -17,6 +17,7 @@ Este projeto foi feito em **C#**, chamando o script **PowerShell** `ipchange.ps1
 
 - A forma mais segura disponível neste projeto continua sendo passar `-Password` como `SecureString`
 - O usuário padrão é o local `.\support`; para evitar prompt de senha, você pode usar `-PlainTextPassword` ou as variáveis `IPCHANGE_ADMIN_USERNAME` e `IPCHANGE_ADMIN_PASSWORD`
+- Se preferir manter um valor local fixo na máquina, copie `ipchange.local.example.psd1` para `ipchange.local.psd1`; esse arquivo é ignorado pelo Git e pode definir `Username` e `PlainTextPassword`
 - Ambos os caminhos usam senha em texto puro em algum momento, então trate esse uso com cuidado
 - Argumentos de linha de comando podem ficar visíveis em listagens de processo
 - Variáveis de ambiente também ficam em texto puro no processo atual até serem limpas e são herdadas automaticamente pelo processo PowerShell iniciado pelo C#
@@ -129,10 +130,29 @@ $password = Read-Host "Senha" -AsSecureString
   -DnsServers "1.1.1.1","8.8.8.8"
 ```
 
+### Via arquivo local ignorado pelo Git
+
+Copie o exemplo para um arquivo local não versionado:
+
+```powershell
+Copy-Item .\ipchange.local.example.psd1 .\ipchange.local.psd1
+```
+
+Depois edite `ipchange.local.psd1` e preencha sua senha:
+
+```powershell
+@{
+  Username = '.\support'
+  PlainTextPassword = 'SuaSenhaAqui'
+}
+```
+
+Com esse arquivo presente, o script passa a usar esses valores como padrão e deixa de pedir a senha interativamente.
+
 ## Observações
 
 - o executável C# apenas orquestra a chamada do `ipchange.ps1`
 - execute o script em um host Windows
 - o usuário local padrão `.\support` precisa ter permissão administrativa, a menos que você sobrescreva `-Username` ou `IPCHANGE_ADMIN_USERNAME`
-- você pode evitar o prompt de credencial usando `-PlainTextPassword` ou `IPCHANGE_ADMIN_PASSWORD`
+- você pode evitar o prompt de credencial usando `-PlainTextPassword`, `IPCHANGE_ADMIN_PASSWORD` ou um arquivo local `ipchange.local.psd1`
 - para simular a alteração sem aplicar, use `-WhatIf`

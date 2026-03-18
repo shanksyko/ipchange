@@ -35,6 +35,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $DefaultUsername = '.\support'
+$LocalCredentialDefaultsPath = Join-Path -Path $PSScriptRoot -ChildPath 'ipchange.local.psd1'
 
 function Assert-Windows {
     if (-not ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT)) {
@@ -164,6 +165,19 @@ function Get-ProcessExecutable {
     }
 
     return 'powershell.exe'
+}
+
+function Get-LocalCredentialDefaults {
+    if (-not (Test-Path -LiteralPath $LocalCredentialDefaultsPath -PathType Leaf)) {
+        return @{}
+    }
+
+    $settings = Import-PowerShellDataFile -Path $LocalCredentialDefaultsPath
+    if ($null -eq $settings) {
+        return @{}
+    }
+
+    return $settings
 }
 
 function Invoke-WithCredential {
@@ -399,8 +413,14 @@ if ($UseCurrentCredential) {
 }
 
 # Use IPCHANGE_ADMIN_USERNAME/IPCHANGE_ADMIN_PASSWORD apenas na sessão/processo atual e limpe essas variáveis após o uso.
+$localCredentialDefaults = Get-LocalCredentialDefaults
+
 if (-not $Username) {
     $Username = $env:IPCHANGE_ADMIN_USERNAME
+}
+
+if (-not $Username) {
+    $Username = $localCredentialDefaults.Username
 }
 
 if (-not $Username) {
@@ -410,6 +430,10 @@ if (-not $Username) {
 if (-not $Password) {
     if ([string]::IsNullOrWhiteSpace($PlainTextPassword)) {
         $PlainTextPassword = $env:IPCHANGE_ADMIN_PASSWORD
+    }
+
+    if ([string]::IsNullOrWhiteSpace($PlainTextPassword)) {
+        $PlainTextPassword = $localCredentialDefaults.PlainTextPassword
     }
 
     if (-not [string]::IsNullOrWhiteSpace($PlainTextPassword)) {
