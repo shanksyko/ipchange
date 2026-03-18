@@ -403,7 +403,7 @@ if (-not $Username) {
 }
 
 if (-not $Username) {
-    $Username = Read-RequiredValue -Prompt 'Digite o usuário com permissão administrativa'
+    $Username = '.\support'
 }
 
 if (-not $Password) {
