@@ -580,7 +580,7 @@ try {
     }
 
     if (-not $Username) {
-        $Username = $localCredentialDefaults.Username
+        $Username = $localCredentialDefaults['Username']
     }
 
     if (-not $Username) {
@@ -593,7 +593,7 @@ try {
         }
 
         if ([string]::IsNullOrWhiteSpace($PlainTextPassword)) {
-            $PlainTextPassword = $localCredentialDefaults.PlainTextPassword
+            $PlainTextPassword = $localCredentialDefaults['PlainTextPassword']
         }
 
         if (-not [string]::IsNullOrWhiteSpace($PlainTextPassword)) {

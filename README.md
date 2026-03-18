@@ -154,7 +154,7 @@ Com esse arquivo presente, o script passa a usar esses valores como padrão e de
 
 ## Observações
 
-- o executável C# roda por padrão no console e chama o `ipchange.ps1` diretamente
+- o aplicativo C# é um executável local normal (`.exe`) e chama o `ipchange.ps1` diretamente, sem interface HTTP/web
 - execute o script em um host Windows
 - o usuário local padrão `.\support` precisa ter permissão administrativa, a menos que você sobrescreva `-Username` ou `IPCHANGE_ADMIN_USERNAME`
 - você pode evitar o prompt de credencial usando `-PlainTextPassword`, `IPCHANGE_ADMIN_PASSWORD` ou um arquivo local `ipchange.local.psd1`
