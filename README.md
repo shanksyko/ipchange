@@ -11,7 +11,7 @@ Este projeto foi feito em **C#**, chamando o script **PowerShell** `ipchange.ps1
 - .NET SDK 8.0+ para compilar ou executar o aplicativo C#
 - Windows com `Get-NetAdapter`, `Get-NetIPAddress` e `netsh`
 - PowerShell 5.1+ ou PowerShell 7+
-- Senha do usuário local `.\support` com privilégio administrativo no computador, ou credenciais equivalentes se você optar por sobrescrever o usuário
+- A conta local `.\support` deve existir com privilégio administrativo no computador; se ela não existir, sobrescreva o usuário padrão com `-Username` ou `IPCHANGE_ADMIN_USERNAME`
 
 ## Segurança das credenciais
 

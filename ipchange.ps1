@@ -34,6 +34,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$DefaultUsername = '.\support'
 
 function Assert-Windows {
     if (-not ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT)) {
@@ -403,7 +404,7 @@ if (-not $Username) {
 }
 
 if (-not $Username) {
-    $Username = '.\support'
+    $Username = $DefaultUsername
 }
 
 if (-not $Password) {
@@ -416,7 +417,7 @@ if (-not $Password) {
         $Password = ConvertTo-SecureString -String $PlainTextPassword -AsPlainText -Force
     }
     else {
-        $Password = Read-Host -Prompt 'Digite a senha do usuário informado' -AsSecureString
+        $Password = Read-Host -Prompt "Digite a senha do usuário $Username" -AsSecureString
     }
 }
 
