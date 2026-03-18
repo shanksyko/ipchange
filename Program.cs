@@ -17,15 +17,14 @@ internal static class Program
 
     private static async Task<int> Main(string[] args)
     {
-        var forceCli = HasArgument(args, "--cli");
         var forceGui = HasArgument(args, "--ui");
         var filteredArgs = args.Where(arg => !string.Equals(arg, "--cli", StringComparison.OrdinalIgnoreCase) &&
                                              !string.Equals(arg, "--ui", StringComparison.OrdinalIgnoreCase))
             .ToArray();
 
-        if (forceGui || (!forceCli && filteredArgs.Length == 0))
+        if (forceGui)
         {
-            return await RunGuiAsync();
+            Console.WriteLine("A interface web foi descontinuada. Iniciando o aplicativo C# no console.");
         }
 
         return await RunCliAsync(filteredArgs);
@@ -35,7 +34,7 @@ internal static class Program
     {
         if (!OperatingSystem.IsWindows())
         {
-            Console.Error.WriteLine("Este aplicativo precisa ser executado no Windows para alterar o IP. Use --ui para abrir apenas a interface local de diagnóstico.");
+            Console.Error.WriteLine("Este aplicativo em C# precisa ser executado no Windows para alterar o IP.");
             return 1;
         }
 
