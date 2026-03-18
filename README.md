@@ -2,6 +2,10 @@
 
 Script PowerShell para listar os adaptadores de rede e trocar o IPv4 de forma autônoma usando um usuário com permissão administrativa.
 
+## Linguagem
+
+Este projeto foi feito em **PowerShell**.
+
 ## Requisitos
 
 - Windows com `Get-NetAdapter`, `Get-NetIPAddress` e `netsh`
