@@ -47,12 +47,29 @@ dotnet run -- -ListAdapters
 .\ipchange.ps1 -ListAdapters
 ```
 
+## Interface gráfica
+
+Por padrão, sem argumentos, o executável C# agora abre uma interface gráfica local no navegador com:
+
+- seleção visual do adaptador
+- formulário para IPv4, prefixo, gateway e DNS
+- diagnóstico de permissões
+- painel de logs para verificação
+
+### Via C#
+
+```powershell
+dotnet run -- --ui
+```
+
+> Se você executar apenas `dotnet run --`, a interface gráfica também será aberta automaticamente.
+
 ## Como executar de forma interativa
 
 ### Via C#
 
 ```powershell
-dotnet run --
+dotnet run -- --cli
 ```
 
 ### Via PowerShell
@@ -151,8 +168,9 @@ Com esse arquivo presente, o script passa a usar esses valores como padrão e de
 
 ## Observações
 
-- o executável C# apenas orquestra a chamada do `ipchange.ps1`
+- o executável C# agora pode abrir a interface gráfica local com `--ui` ou continuar chamando o `ipchange.ps1` diretamente com `--cli`
 - execute o script em um host Windows
 - o usuário local padrão `.\support` precisa ter permissão administrativa, a menos que você sobrescreva `-Username` ou `IPCHANGE_ADMIN_USERNAME`
 - você pode evitar o prompt de credencial usando `-PlainTextPassword`, `IPCHANGE_ADMIN_PASSWORD` ou um arquivo local `ipchange.local.psd1`
 - para simular a alteração sem aplicar, use `-WhatIf`
+- os logs do wrapper C# e do script PowerShell ficam em `%LocalAppData%\ipchange\logs`
