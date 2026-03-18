@@ -10,14 +10,14 @@ internal static class Program
 
     private static async Task<int> Main(string[] args)
     {
-        var forceUi = HasArgument(args, "--ui");
+        var deprecatedUiFlag = HasArgument(args, "--ui");
         var filteredArgs = args.Where(arg => !string.Equals(arg, "--cli", StringComparison.OrdinalIgnoreCase) &&
                                              !string.Equals(arg, "--ui", StringComparison.OrdinalIgnoreCase))
             .ToArray();
 
-        if (forceUi)
+        if (deprecatedUiFlag)
         {
-            Console.WriteLine("A interface HTTP/web foi removida. Iniciando o aplicativo .exe normal no console.");
+            Console.WriteLine("A opção --ui foi descontinuada e será ignorada. Executando o aplicativo .exe normal no console.");
         }
 
         return await RunCliAsync(filteredArgs);
