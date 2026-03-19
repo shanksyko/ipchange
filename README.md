@@ -1,162 +1,89 @@
 # ipchange
 
-Aplicativo em C# que chama um script PowerShell para listar os adaptadores de rede e trocar o IPv4 de forma autônoma usando um usuário com permissão administrativa.
-
-## Linguagem
-
-Este projeto foi feito em **C#**, chamando o script **PowerShell** `ipchange.ps1`.
+Aplicativo WinForms em C# para trocar o IPv4 de um adaptador de rede por meio do serviço Windows local instalado pelo MSI, sem PowerShell e sem fluxo de diagnóstico.
 
 ## Requisitos
 
-- .NET SDK 8.0+ para compilar ou executar o aplicativo C#
-- Windows com `Get-NetAdapter`, `Get-NetIPAddress` e `netsh`
-- PowerShell 5.1+ ou PowerShell 7+
-- A conta local `.\support` deve existir com privilégio administrativo no computador; se ela não existir, sobrescreva o usuário padrão com `-Username` ou `IPCHANGE_ADMIN_USERNAME`
+- .NET SDK 8.0+ para compilar ou executar o aplicativo
+- Windows com `netsh`
+- para uso sem prompt de elevação, instale o próprio `ipchange.exe` como serviço Windows local uma única vez com privilégios administrativos
 
-## Segurança das credenciais
+## O que a interface faz
 
-- A forma mais segura disponível neste projeto continua sendo passar `-Password` como `SecureString`
-- O usuário padrão é o local `.\support`; para evitar prompt de senha, você pode usar `-PlainTextPassword` ou as variáveis `IPCHANGE_ADMIN_USERNAME` e `IPCHANGE_ADMIN_PASSWORD`
-- Se preferir manter um valor local fixo na máquina, copie `ipchange.local.example.psd1` para `ipchange.local.psd1`; esse arquivo é ignorado pelo Git e pode definir `Username` e `PlainTextPassword`
-- Para máquinas no domínio que precisam continuar usando a conta local `support`, mantenha `Username = '.\support'` no arquivo `ipchange.local.psd1`; o wrapper C# também assume `.\support` automaticamente quando você não informar outro usuário
-- Ambos os caminhos usam senha em texto puro em algum momento, então trate esse uso com cuidado
-- Argumentos de linha de comando podem ficar visíveis em listagens de processo
-- Variáveis de ambiente também ficam em texto puro no processo atual até serem limpas e são herdadas automaticamente pelo processo PowerShell iniciado pelo C#
-- Prefira definir `IPCHANGE_ADMIN_USERNAME` e `IPCHANGE_ADMIN_PASSWORD` apenas no processo/sessão atual, não como variáveis persistentes de usuário ou sistema
-- Mesmo após converter a senha para `SecureString`, o texto puro pode permanecer na memória por algum tempo
-- Se você montar um `SecureString` a partir de uma senha em texto puro por conta própria, essa mesma limitação existe antes da conversão
+- carrega os adaptadores de rede visíveis em uma lista
+- permite alternar entre IPv4 estático e DHCP
+- no modo estático, permite informar IPv4, prefixo, gateway e DNS
+- usa o serviço local do próprio `ipchange.exe` quando o usuário atual não está em modo administrador
+- inicia em segundo plano com ícone na bandeja quando executado com `--background`
+- quando instalado via MSI, registra inicialização automática no logon do Windows
+- executa a alteração real via named pipe para o serviço Windows local
+- permite redimensionar a janela e adapta os campos ao tamanho disponível
+- mostra o andamento básico da operação na própria janela
+- grava logs em arquivo `.txt`
 
-## O que o script faz
-
-- lista todos os adaptadores de rede visíveis
-- permite escolher qual adaptador será configurado
-- usa por padrão o usuário local `.\support` e solicita apenas a senha quando necessário
-- aplica IPv4 estático, gateway e DNS
-- confirma se o IP foi realmente alterado
-
-## Como listar os adaptadores
-
-### Via C#
+## Como executar
 
 ```powershell
-dotnet run -- -ListAdapters
+dotnet run
 ```
 
-### Via PowerShell
+Ou pelo executável compilado:
 
 ```powershell
-.\ipchange.ps1 -ListAdapters
+.\bin\Debug\net8.0-windows\ipchange.exe
 ```
 
-## Como executar de forma interativa
+## Instalador
 
-### Via C#
+O fluxo de instalação suportado pelo repositório é o MSI via WiX em [installer/ipchange.installer.wixproj](c:/Repositorio/ipchange/installer/ipchange.installer.wixproj).
+
+O fluxo recomendado de distribuição agora é o MSI:
+
+1. publicar o `ipchange.exe` em single-file
+2. gerar o MSI com [build-msi.ps1](c:/Repositorio/ipchange/build-msi.ps1)
+3. distribuir o MSI versionado gerado em `artifacts/installer/msi/win-x64`
+
+Para gerar o MSI:
 
 ```powershell
-dotnet run --
+.\build-msi.ps1
 ```
 
-### Via PowerShell
+Cada novo build do MSI recebe:
 
-```powershell
-.\ipchange.ps1
-```
+- um nome de arquivo único com versão + timestamp
+- uma versão interna crescente do Windows Installer
 
-O script vai:
+Isso faz com que um MSI novo atualize ou substitua a instalação anterior do `ipchange` automaticamente.
 
-1. mostrar os adaptadores disponíveis
-2. pedir o `InterfaceIndex` do adaptador
-3. pedir o novo IPv4, prefixo, gateway e DNS
-4. pedir apenas a senha administrativa do usuário local `.\support`
-5. reaplicar a execução com a credencial informada e validar a alteração
+O MSI:
 
-## Como executar informando os dados
+- copia o `ipchange.exe` para `Program Files\ipchange`
+- registra o serviço Windows `Ipchange`
+- registra a inicialização automática em segundo plano no logon do Windows
+- inicia o serviço automaticamente durante a instalação
+- remove o serviço automaticamente na desinstalação
+- remove a entrada de inicialização automática na desinstalação
+- remove os logs protegidos em `%ProgramData%\ipchange\secure-logs` na desinstalação
+- remove a pasta de instalação e as pastas de dados criadas pelo app quando estiverem vazias
+- deixa a interface disponível em `Program Files\\ipchange\\ipchange.exe`
+- cria atalho no menu Iniciar
+- cria atalho na área de trabalho
 
-### Via C#
+A pasta final de distribuição passa a incluir o MSI versionado a cada build, por exemplo:
 
-```powershell
-dotnet run -- `
-  -PlainTextPassword "SenhaAdminAqui" `
-  -AdapterName "Ethernet" `
-  -IPAddress "192.168.0.50" `
-  -PrefixLength 24 `
-  -DefaultGateway "192.168.0.1" `
-  -DnsServers "1.1.1.1","8.8.8.8"
-```
+- `ipchange-installer-v1.0.1-20260318-224500.msi`
 
-> O parâmetro `-PlainTextPassword` evita o prompt, mas expõe a senha na linha de comando.
+## Modo de execução
 
-### Via C# com variáveis de ambiente
-
-```powershell
-$env:IPCHANGE_ADMIN_PASSWORD = "SenhaAdminAqui"
-
-dotnet run -- `
-  -AdapterName "Ethernet" `
-  -IPAddress "192.168.0.50" `
-  -PrefixLength 24 `
-  -DefaultGateway "192.168.0.1" `
-  -DnsServers "1.1.1.1","8.8.8.8"
-
-Remove-Item Env:IPCHANGE_ADMIN_PASSWORD
-```
-
-> Quando a variável de ambiente de senha estiver definida, o processo iniciado pelo C# herda esse valor e o script não pede a senha. O usuário padrão continua sendo `.\support`.
->
-> Se você também definir `IPCHANGE_ADMIN_USERNAME`, ela sobrescreve o usuário padrão. Depois do uso, limpe essas variáveis para reduzir a exposição da credencial no terminal atual.
-
-### Via PowerShell
-
-```powershell
-$password = Read-Host "Senha" -AsSecureString
-
-.\ipchange.ps1 `
-  -Password $password `
-  -AdapterName "Ethernet" `
-  -IPAddress "192.168.0.50" `
-  -PrefixLength 24 `
-  -DefaultGateway "192.168.0.1" `
-  -DnsServers "1.1.1.1","8.8.8.8"
-```
-
-### Via PowerShell sem prompt de senha
-
-```powershell
-.\ipchange.ps1 `
-  -PlainTextPassword "SenhaAdminAqui" `
-  -AdapterName "Ethernet" `
-  -IPAddress "192.168.0.50" `
-  -PrefixLength 24 `
-  -DefaultGateway "192.168.0.1" `
-  -DnsServers "1.1.1.1","8.8.8.8"
-```
-
-### Via arquivo local ignorado pelo Git
-
-Copie o exemplo para um arquivo local não versionado:
-
-```powershell
-Copy-Item .\ipchange.local.example.psd1 .\ipchange.local.psd1
-```
-
-Depois edite `ipchange.local.psd1` e preencha sua senha:
-
-```powershell
-@{
-  Username = '.\support'
-  PlainTextPassword = 'SuaSenhaAqui'
-}
-```
-
-Com esse arquivo presente, o script passa a usar esses valores como padrão e deixa de pedir a senha interativamente.
-
-> Esse é o local recomendado para guardar uma senha fixa por máquina, porque `ipchange.local.psd1` é ignorado pelo Git e não expõe a credencial no repositório.
+- se o usuário atual já estiver em modo administrador, o app aplica a configuração diretamente
+- se o usuário atual não estiver em modo administrador, o app envia a solicitação ao serviço Windows local `Ipchange` pelo named pipe `ipchange-service`
+- quando iniciado com o Windows, o app sobe em segundo plano e permanece acessível pela bandeja do sistema
 
 ## Observações
 
-- o aplicativo C# é um executável local normal (`.exe`) e chama o `ipchange.ps1` diretamente, sem interface HTTP/web
-- execute o script em um host Windows
-- o usuário local padrão `.\support` precisa ter permissão administrativa, a menos que você sobrescreva `-Username` ou `IPCHANGE_ADMIN_USERNAME`
-- você pode evitar o prompt de credencial usando `-PlainTextPassword`, `IPCHANGE_ADMIN_PASSWORD` ou um arquivo local `ipchange.local.psd1`
-- para simular a alteração sem aplicar, use `-WhatIf`
-- os logs do wrapper C# e do script PowerShell ficam em `%LocalAppData%\ipchange\logs`
+- o aplicativo é Windows-only
+- a aplicação real do IP ainda exige privilégio administrativo, mas isso fica concentrado no serviço Windows local
+- a inicialização automática do app instalado passa a ser controlada pelo MSI para permitir atualização e remoção completas
+- os logs passam a ficar em `%ProgramData%\ipchange\secure-logs` com extensão `.txt`
+- quando o serviço cria a pasta de logs, ele restringe o acesso para Administrators e LocalSystem

@@ -1,0 +1,12 @@
+<Project Sdk="WixToolset.Sdk/6.0.2">
+
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <OutputName>ipchange-installer</OutputName>
+    <AppVersion>1.0.0</AppVersion>
+    <PublishedExePath>..\artifacts\release\win-x64\ipchange.exe</PublishedExePath>
+    <DefineConstants>AppVersion=$(AppVersion);PublishedExePath=$(PublishedExePath)</DefineConstants>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,90 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="ipchange"
+      Manufacturer="shanksyko"
+      Version="$(var.AppVersion)"
+      UpgradeCode="E797C1E5-406E-4132-A07C-2D7A1F4E2B16"
+      InstallerVersion="500"
+      Scope="perMachine"
+      Compressed="yes">
+
+    <SummaryInformation Description="Instalador do ipchange" Manufacturer="shanksyko" />
+
+    <MajorUpgrade DowngradeErrorMessage="Ja existe uma versao mais recente do ipchange instalada." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="ipchange" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="ipchange" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="IPCHANGEDATAFOLDER" Name="ipchange">
+        <Directory Id="SECURELOGSFOLDER" Name="secure-logs" />
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="MainFeature" Title="ipchange" Level="1">
+      <ComponentRef Id="IpchangeExecutableComponent" />
+      <ComponentRef Id="IpchangeMachineStateComponent" />
+    </Feature>
+
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="IpchangeExecutableComponent" Bitness="always64" Guid="*">
+        <File Id="IpchangeExecutable" Source="$(var.PublishedExePath)" KeyPath="yes" Checksum="yes">
+          <Shortcut
+              Id="IpchangeStartMenuShortcut"
+            Directory="ApplicationProgramsFolder"
+              Name="ipchange"
+              Advertise="yes" />
+          <Shortcut
+              Id="IpchangeDesktopShortcut"
+              Directory="DesktopFolder"
+              Name="ipchange"
+              Advertise="yes" />
+        </File>
+
+        <RemoveFolder Id="RemoveApplicationProgramsFolder" Directory="ApplicationProgramsFolder" On="uninstall" />
+        <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
+
+        <ServiceInstall
+            Id="IpchangeServiceInstall"
+            Name="Ipchange"
+            DisplayName="Ipchange"
+            Description="Servico do ipchange para aplicar configuracoes de IP sem exigir elevacao na interface."
+            Type="ownProcess"
+            Start="auto"
+            ErrorControl="normal"
+            Vital="yes"
+            Arguments="--service" />
+
+        <ServiceControl
+            Id="IpchangeServiceControl"
+            Name="Ipchange"
+            Start="install"
+            Stop="both"
+            Remove="uninstall"
+            Wait="yes" />
+      </Component>
+
+      <Component Id="IpchangeMachineStateComponent" Bitness="always64" Guid="*">
+        <RegistryValue
+            Root="HKLM"
+            Key="Software\Microsoft\Windows\CurrentVersion\Run"
+            Name="ipchange"
+            Type="string"
+            Value="&quot;[INSTALLFOLDER]ipchange.exe&quot; --background"
+            KeyPath="yes" />
+
+        <RemoveFile Id="RemoveIpchangeDataFiles" Directory="IPCHANGEDATAFOLDER" Name="*" On="uninstall" />
+        <RemoveFile Id="RemoveIpchangeSecureLogFiles" Directory="SECURELOGSFOLDER" Name="*" On="uninstall" />
+        <RemoveFolder Id="RemoveSecureLogsFolder" Directory="SECURELOGSFOLDER" On="uninstall" />
+        <RemoveFolder Id="RemoveIpchangeDataFolder" Directory="IPCHANGEDATAFOLDER" On="uninstall" />
+      </Component>
+    </DirectoryRef>
+
+  </Package>
+</Wix>

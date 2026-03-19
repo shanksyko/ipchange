@@ -1,209 +1,184 @@
-using System.Diagnostics;
-using System.Text;
+using System.Text.Json;
+using System.Windows.Forms;
 
 namespace ipchange;
 
 internal static class Program
 {
-    private static readonly object LogSync = new();
-    private static readonly string LogPath = BuildLogPath();
-
+    [STAThread]
     private static async Task<int> Main(string[] args)
-    {
-        var deprecatedUiFlag = HasArgument(args, "--ui");
-        var filteredArgs = args.Where(arg => !string.Equals(arg, "--cli", StringComparison.OrdinalIgnoreCase) &&
-                                             !string.Equals(arg, "--ui", StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-
-        if (deprecatedUiFlag)
-        {
-            Console.WriteLine("A opção --ui foi descontinuada e será ignorada. Executando o aplicativo .exe normal no console.");
-        }
-
-        return await RunCliAsync(filteredArgs);
-    }
-
-    private static async Task<int> RunCliAsync(string[] args)
     {
         if (!OperatingSystem.IsWindows())
         {
-            Console.Error.WriteLine("Este aplicativo em C# precisa ser executado no Windows para alterar o IP.");
+            MessageBox.Show(
+                "Este aplicativo precisa ser executado no Windows para alterar o IP.",
+                "ipchange",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
             return 1;
         }
-
-        var runtime = ResolveRuntime();
-        if (!runtime.IsValid)
-        {
-            Console.Error.WriteLine(runtime.ErrorMessage);
-            return 1;
-        }
-
-        var startInfo = CreateBaseStartInfo(runtime);
-        foreach (var arg in args)
-        {
-            startInfo.ArgumentList.Add(arg);
-        }
-
-        if (!HasArgument(args, "-LogPath"))
-        {
-            startInfo.ArgumentList.Add("-LogPath");
-            startInfo.ArgumentList.Add(LogPath);
-        }
-
-        Log("INFO", $"CLI iniciada com argumentos: {SanitizeArguments(startInfo.ArgumentList)}");
 
         try
         {
-            using var process = Process.Start(startInfo);
-            if (process is null)
+            if (args.Any(arg => string.Equals(arg, "--service", StringComparison.OrdinalIgnoreCase)))
             {
-                Console.Error.WriteLine("Não foi possível iniciar o PowerShell.");
-                Log("ERROR", "O PowerShell não pôde ser iniciado no modo CLI.");
-                return 1;
+                return await IpChangeServiceRuntime.RunAsync(args);
             }
 
-            await process.WaitForExitAsync();
-            Log("INFO", $"CLI finalizada com código {process.ExitCode}.");
-
-            if (process.ExitCode != 0)
+            if (InternalCommandParser.TryParse(args, out var command))
             {
-                Console.Error.WriteLine($"Falha ao executar o script. Consulte o log em: {LogPath}");
+                return await InternalCommandRunner.RunAsync(command!);
             }
 
-            return process.ExitCode;
+            ApplicationConfiguration.Initialize();
+            var startHidden = args.Any(arg => string.Equals(arg, "--background", StringComparison.OrdinalIgnoreCase));
+            Application.Run(new MainForm(startHidden));
+            return 0;
         }
         catch (Exception ex)
         {
-            Log("ERROR", $"Falha ao executar o modo CLI: {ex.Message}");
-            Console.Error.WriteLine($"Falha ao executar o PowerShell: {ex.Message}");
-            Console.Error.WriteLine($"Log disponível em: {LogPath}");
+            AppLogger.Write("ERROR", ex.Message);
+            MessageBox.Show(
+                ex.Message,
+                "ipchange",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
             return 1;
         }
     }
+}
 
-    private static ProcessStartInfo CreateBaseStartInfo(RuntimeResolution runtime)
+internal static class InternalCommandParser
+{
+    public static bool TryParse(string[] args, out InternalCommand? command)
     {
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = runtime.PowerShellExecutable!,
-            UseShellExecute = false
-        };
-
-        startInfo.ArgumentList.Add("-NoLogo");
-        startInfo.ArgumentList.Add("-NoProfile");
-        startInfo.ArgumentList.Add("-ExecutionPolicy");
-        startInfo.ArgumentList.Add("Bypass");
-        startInfo.ArgumentList.Add("-File");
-        startInfo.ArgumentList.Add(runtime.ScriptPath!);
-
-        return startInfo;
-    }
-
-    private static RuntimeResolution ResolveRuntime()
-    {
-        var scriptPath = Path.Combine(AppContext.BaseDirectory, "ipchange.ps1");
-        if (!File.Exists(scriptPath))
-        {
-            return new RuntimeResolution(false, scriptPath, null, $"Script PowerShell não encontrado em '{scriptPath}'.");
-        }
-
-        var powerShellExecutable = FindPowerShellExecutable();
-        if (powerShellExecutable is null)
-        {
-            return new RuntimeResolution(false, scriptPath, null, "Nenhum executável do PowerShell foi encontrado. Instale o PowerShell 5.1+ ou o PowerShell 7+.");
-        }
-
-        return new RuntimeResolution(true, scriptPath, powerShellExecutable, null);
-    }
-
-    private static string? FindPowerShellExecutable()
-    {
-        foreach (var executable in new[] { "pwsh.exe", "powershell.exe" })
-        {
-            if (IsExecutableOnPath(executable))
-            {
-                return executable;
-            }
-        }
-
-        return null;
-    }
-
-    private static bool IsExecutableOnPath(string executable)
-    {
-        var path = Environment.GetEnvironmentVariable("PATH");
-        if (string.IsNullOrWhiteSpace(path))
+        command = null;
+        if (args.Length == 0)
         {
             return false;
         }
 
-        foreach (var directory in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        if (!string.Equals(args[0], "--apply", StringComparison.OrdinalIgnoreCase))
         {
-            if (File.Exists(Path.Combine(directory, executable)))
+            return false;
+        }
+
+        var request = new ApplyRequest();
+        for (var index = 1; index < args.Length; index++)
+        {
+            var argument = args[index];
+            switch (argument.ToLowerInvariant())
             {
-                return true;
+                case "--dhcp":
+                    request.UseDhcp = true;
+                    break;
+                case "--adapter-name":
+                    request.AdapterName = ReadValue(args, ref index, argument);
+                    break;
+                case "--ip-address":
+                    request.IPAddress = ReadValue(args, ref index, argument);
+                    break;
+                case "--prefix-length":
+                    if (!int.TryParse(ReadValue(args, ref index, argument), out var prefixLength) || prefixLength is < 0 or > 32)
+                    {
+                        throw new ArgumentException("O valor de --prefix-length deve estar entre 0 e 32.");
+                    }
+
+                    request.PrefixLength = prefixLength;
+                    break;
+                case "--default-gateway":
+                    request.DefaultGateway = ReadValue(args, ref index, argument);
+                    break;
+                case "--dns-server":
+                    request.DnsServers.Add(ReadValue(args, ref index, argument));
+                    break;
+                case "--log-path":
+                    request.LogPath = ReadValue(args, ref index, argument);
+                    break;
+                case "--result-path":
+                    request.ResultPath = ReadValue(args, ref index, argument);
+                    break;
+                case "--error-path":
+                    request.ErrorPath = ReadValue(args, ref index, argument);
+                    break;
+                default:
+                    throw new ArgumentException($"Argumento interno não reconhecido: {argument}");
             }
         }
 
-        return false;
+        if (string.IsNullOrWhiteSpace(request.AdapterName) ||
+            (!request.UseDhcp &&
+             (string.IsNullOrWhiteSpace(request.IPAddress) || !request.PrefixLength.HasValue)))
+        {
+            throw new ArgumentException(request.UseDhcp
+                ? "O modo interno --apply com DHCP exige ao menos o adaptador."
+                : "O modo interno --apply exige adapter, ip e prefixo.");
+        }
+
+        command = new ApplyCommand(request);
+        return true;
     }
 
-    private static bool HasArgument(IEnumerable<string> arguments, string value) =>
-        arguments.Any(argument => string.Equals(argument, value, StringComparison.OrdinalIgnoreCase));
-
-    private static string BuildLogPath()
+    private static string ReadValue(string[] args, ref int index, string argumentName)
     {
-        var baseDirectory = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        if (string.IsNullOrWhiteSpace(baseDirectory))
+        if (index + 1 >= args.Length || args[index + 1].StartsWith("--", StringComparison.Ordinal))
         {
-            baseDirectory = Path.GetTempPath();
+            throw new ArgumentException($"O argumento {argumentName} exige um valor.");
         }
 
-        return Path.Combine(baseDirectory, "ipchange", "logs", $"ipchange-{DateTime.Now:yyyyMMdd}.log");
+        index++;
+        return args[index];
     }
-
-    private static void Log(string level, string message)
-    {
-        try
-        {
-            lock (LogSync)
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(LogPath)!);
-                File.AppendAllText(
-                    LogPath,
-                    $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [{level}] {message}{Environment.NewLine}",
-                    Encoding.UTF8);
-            }
-        }
-        catch
-        {
-        }
-    }
-
-    private static string SanitizeArguments(IEnumerable<string> arguments)
-    {
-        var sanitized = new List<string>();
-        var redactNext = false;
-
-        foreach (var argument in arguments)
-        {
-            if (redactNext)
-            {
-                sanitized.Add("<redacted>");
-                redactNext = false;
-                continue;
-            }
-
-            sanitized.Add(argument);
-            if (string.Equals(argument, "-PlainTextPassword", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(argument, "-Password", StringComparison.OrdinalIgnoreCase))
-            {
-                redactNext = true;
-            }
-        }
-
-        return string.Join(' ', sanitized);
-    }
-
-    private sealed record RuntimeResolution(bool IsValid, string? ScriptPath, string? PowerShellExecutable, string? ErrorMessage);
 }
+
+internal static class InternalCommandRunner
+{
+    public static async Task<int> RunAsync(InternalCommand command)
+    {
+        switch (command)
+        {
+            case ApplyCommand applyCommand:
+                if (!string.IsNullOrWhiteSpace(applyCommand.Request.LogPath))
+                {
+                    AppLogger.SetPath(applyCommand.Request.LogPath!);
+                }
+
+                try
+                {
+                    var result = await NetworkConfigurationService.ApplyConfigurationAsync(applyCommand.Request);
+                    var payload = JsonSerializer.Serialize(result, AppJson.Options);
+                    if (!string.IsNullOrWhiteSpace(applyCommand.Request.ResultPath))
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(applyCommand.Request.ResultPath!)!);
+                        await File.WriteAllTextAsync(applyCommand.Request.ResultPath!, payload);
+                    }
+                    else
+                    {
+                        Console.WriteLine(payload);
+                    }
+
+                    return 0;
+                }
+                catch (Exception ex)
+                {
+                    AppLogger.Write("ERROR", ex.Message);
+                    if (!string.IsNullOrWhiteSpace(applyCommand.Request.ErrorPath))
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(applyCommand.Request.ErrorPath!)!);
+                        await File.WriteAllTextAsync(applyCommand.Request.ErrorPath!, ex.Message);
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine(ex.Message);
+                    }
+
+                    return 1;
+                }
+            default:
+                throw new InvalidOperationException("Comando interno inválido.");
+        }
+    }
+}
+
+internal abstract record InternalCommand;
+internal sealed record ApplyCommand(ApplyRequest Request) : InternalCommand;
