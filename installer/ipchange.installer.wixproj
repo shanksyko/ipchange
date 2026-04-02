@@ -3,9 +3,9 @@
   <PropertyGroup>
     <OutputType>Package</OutputType>
     <InstallerPlatform>x64</InstallerPlatform>
-    <OutputName>ipchange-installer</OutputName>
+    <OutputName>network-configurator-installer</OutputName>
     <AppVersion>1.0.0</AppVersion>
-    <PublishedExePath>..\artifacts\release\win-x64\ipchange.exe</PublishedExePath>
+    <PublishedExePath>..\artifacts\release\win-x64\network-configurator.exe</PublishedExePath>
     <DefineConstants>AppVersion=$(AppVersion);PublishedExePath=$(PublishedExePath)</DefineConstants>
   </PropertyGroup>
 

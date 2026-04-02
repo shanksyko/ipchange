@@ -1,12 +1,12 @@
 using System.Diagnostics;
 
-namespace ipchange;
+namespace NetworkConfigurator;
 
 internal static class LocalServiceManager
 {
   public static async Task<LocalServiceState> GetStatusAsync()
   {
-    var result = await RunScAsync($"query {IpChangeServiceProtocol.ServiceName}", allowFailure: true);
+    var result = await RunScAsync($"query {NetworkConfiguratorServiceProtocol.ServiceName}", allowFailure: true);
     if (result.ExitCode == 1060 || result.Output.Contains("does not exist", StringComparison.OrdinalIgnoreCase))
     {
       return LocalServiceState.NotInstalled;
@@ -15,7 +15,7 @@ internal static class LocalServiceManager
     if (result.ExitCode != 0)
     {
       throw new InvalidOperationException(string.IsNullOrWhiteSpace(result.Output)
-          ? "Não foi possível consultar o serviço local do ipchange."
+          ? "Não foi possível consultar o serviço local do Network Configurator."
           : result.Output);
     }
 

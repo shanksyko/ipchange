@@ -6,7 +6,7 @@ using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 
-namespace ipchange;
+namespace NetworkConfigurator;
 
 internal static class AppJson
 {
@@ -56,7 +56,7 @@ internal static class AppLogger
             baseDirectory = Path.GetTempPath();
         }
 
-        return Path.Combine(baseDirectory, "ipchange", "secure-logs", $"ipchange-{DateTime.Now:yyyyMMdd}.txt");
+        return Path.Combine(baseDirectory, "network-configurator", "secure-logs", $"network-configurator-{DateTime.Now:yyyyMMdd}.txt");
     }
 
     private static void EnsureDirectoryReady()
@@ -389,9 +389,32 @@ internal static class NetworkConfigurationService
     private static AdapterInfo CreateAdapterInfo(NetworkInterface networkInterface)
     {
         int? interfaceIndex = null;
+        string? currentIPAddress = null;
+        int? currentPrefixLength = null;
+        string? currentDefaultGateway = null;
+        string[] currentDnsServers = Array.Empty<string>();
+        var isDhcpEnabled = false;
+
         try
         {
-            interfaceIndex = networkInterface.GetIPProperties().GetIPv4Properties()?.Index;
+            var properties = networkInterface.GetIPProperties();
+            var ipv4Props = properties.GetIPv4Properties();
+            interfaceIndex = ipv4Props?.Index;
+            isDhcpEnabled = ipv4Props?.IsDhcpEnabled ?? false;
+
+            var unicastAddr = properties.UnicastAddresses
+                .FirstOrDefault(a => a.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
+            currentIPAddress = unicastAddr?.Address.ToString();
+            currentPrefixLength = unicastAddr?.PrefixLength;
+
+            currentDefaultGateway = properties.GatewayAddresses
+                .FirstOrDefault(g => g.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                ?.Address.ToString();
+
+            currentDnsServers = properties.DnsAddresses
+                .Where(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                .Select(a => a.ToString())
+                .ToArray();
         }
         catch
         {
@@ -403,7 +426,12 @@ internal static class NetworkConfigurationService
             networkInterface.Description,
             networkInterface.OperationalStatus.ToString(),
             FormatMacAddress(networkInterface.GetPhysicalAddress()),
-            FormatLinkSpeed(networkInterface.Speed));
+            FormatLinkSpeed(networkInterface.Speed),
+            currentIPAddress,
+            currentPrefixLength,
+            currentDefaultGateway,
+            currentDnsServers,
+            isDhcpEnabled);
     }
 
     private static string ConvertToSubnetMask(int prefixLength)
@@ -452,5 +480,25 @@ internal sealed class ApplyRequest
     public string? ErrorPath { get; set; }
 }
 
-internal sealed record AdapterInfo(int InterfaceIndex, string Name, string InterfaceDescription, string Status, string MacAddress, string LinkSpeed);
+internal sealed record AdapterInfo(
+    int InterfaceIndex,
+    string Name,
+    string InterfaceDescription,
+    string Status,
+    string MacAddress,
+    string LinkSpeed,
+    string? CurrentIPAddress,
+    int? CurrentPrefixLength,
+    string? CurrentDefaultGateway,
+    string[] CurrentDnsServers,
+    bool IsDhcpEnabled)
+{
+    public string DisplayName => string.IsNullOrWhiteSpace(CurrentIPAddress)
+        ? Name
+        : IsDhcpEnabled
+            ? $"{Name}  [{CurrentIPAddress}/{CurrentPrefixLength} – DHCP]"
+            : $"{Name}  [{CurrentIPAddress}/{CurrentPrefixLength}]";
+}
 internal sealed record AdapterConfigurationResult(string AdapterName, bool UseDhcp, string? IPAddress, int? PrefixLength, string? DefaultGateway, string[] DnsServers);
+internal sealed record RouteEntry(string Destination, string Mask, string Gateway, string Interface, int Metric);
+internal sealed record ArpEntry(string Interface, string IPAddress, string MacAddress, string Type);
