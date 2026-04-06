@@ -1,4 +1,5 @@
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <Package
     Name="Network Configurator"
     Manufacturer="shanksyko"
@@ -13,11 +14,22 @@
       Manufacturer="shanksyko"
     />
 
+    <!-- Instalar / Reparar / Desinstalar via UI padrão WiX -->
+    <Icon Id="AppIcon.ico" SourceFile="$(var.IconPath)" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon.ico" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/shanksyko/ipchange" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/shanksyko/ipchange" />
+
+    <ui:WixUI Id="WixUI_InstallDir" />
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+
     <MajorUpgrade DowngradeErrorMessage="Ja existe uma versao mais recente do Network Configurator instalada." />
     <MediaTemplate EmbedCab="yes" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
-      <Directory Id="INSTALLFOLDER" Name="Network Configurator" />
+      <Directory Id="INSTALLFOLDER" Name="Network Configurator">
+        <Directory Id="ASSETSFOLDER" Name="assets" />
+      </Directory>
     </StandardDirectory>
 
     <StandardDirectory Id="ProgramMenuFolder">
@@ -32,8 +44,23 @@
 
     <Feature Id="MainFeature" Title="Network Configurator" Level="1">
       <ComponentRef Id="NetworkConfiguratorExecutableComponent" />
+      <ComponentRef Id="NetworkConfiguratorAssetsComponent" />
       <ComponentRef Id="NetworkConfiguratorMachineStateComponent" />
     </Feature>
+
+    <DirectoryRef Id="ASSETSFOLDER">
+      <Component
+        Id="NetworkConfiguratorAssetsComponent"
+        Bitness="always64"
+        Guid="*"
+      >
+        <File
+          Id="AppIconFile"
+          Source="$(var.IconPath)"
+          KeyPath="yes"
+        />
+      </Component>
+    </DirectoryRef>
 
     <DirectoryRef Id="INSTALLFOLDER">
       <Component
@@ -133,4 +160,4 @@
       </Component>
     </DirectoryRef>
   </Package>
-</Wix>;
+</Wix>

@@ -9,19 +9,40 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$projectFile = Join-Path $root 'ipchange.csproj'
-$publishDir = Join-Path $root "artifacts\release\$RuntimeIdentifier"
-$publishedExe = Join-Path $publishDir 'ipchange.exe'
-$installerProject = Join-Path $root 'installer\ipchange.installer.wixproj'
-$installerOutputDir = Join-Path $root "artifacts\installer\msi\$RuntimeIdentifier"
-$installerBuildOutputDir = Join-Path $root 'installer\bin\Release'
-$builtInstallerMsi = Join-Path $installerBuildOutputDir 'ipchange-installer.msi'
+$applicationProjects = @(Get-ChildItem -Path $root -Filter '*.csproj' -File | Where-Object { $_.DirectoryName -eq $root })
+if ($applicationProjects.Count -ne 1) {
+    $projectList = ($applicationProjects | Select-Object -ExpandProperty Name) -join ', '
+    throw "Esperado exatamente um projeto .csproj na raiz do repositorio, encontrados: $projectList"
+}
 
+$projectFile = $applicationProjects[0].FullName
 [xml]$projectXml = Get-Content -LiteralPath $projectFile
 $projectVersion = [string]($projectXml.Project.PropertyGroup.Version | Select-Object -First 1)
 if ([string]::IsNullOrWhiteSpace($projectVersion)) {
     $projectVersion = '0.0.0'
 }
+
+$assemblyName = [string]($projectXml.Project.PropertyGroup.AssemblyName | Select-Object -First 1)
+if ([string]::IsNullOrWhiteSpace($assemblyName)) {
+    $assemblyName = [System.IO.Path]::GetFileNameWithoutExtension($projectFile)
+}
+
+$installerProject = Join-Path $root 'installer\ipchange.installer.wixproj'
+if (-not (Test-Path -LiteralPath $installerProject -PathType Leaf)) {
+    throw "Projeto do instalador nao encontrado em: $installerProject"
+}
+
+[xml]$installerProjectXml = Get-Content -LiteralPath $installerProject
+$installerOutputName = [string]($installerProjectXml.Project.PropertyGroup.OutputName | Select-Object -First 1)
+if ([string]::IsNullOrWhiteSpace($installerOutputName)) {
+    $installerOutputName = 'installer'
+}
+
+$publishDir = Join-Path $root "artifacts\release\$RuntimeIdentifier"
+$publishedExe = Join-Path $publishDir "$assemblyName.exe"
+$installerOutputDir = Join-Path $root "artifacts\installer\msi\$RuntimeIdentifier"
+$installerBuildOutputDir = Join-Path $root "installer\bin\$Configuration"
+$builtInstallerMsi = Join-Path $installerBuildOutputDir "$installerOutputName.msi"
 
 function Get-MsiProductVersion {
     param(
@@ -48,7 +69,7 @@ $msiProductVersion = Get-MsiProductVersion -BaseVersion $projectVersion
 
 $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $artifactLabel = "v$projectVersion-$timestamp"
-$installerMsi = Join-Path $installerOutputDir "ipchange-installer-$artifactLabel.msi"
+$installerMsi = Join-Path $installerOutputDir "$installerOutputName-$artifactLabel.msi"
 
 function Get-LatestArtifact {
     param(
@@ -62,7 +83,7 @@ function Get-LatestArtifact {
 }
 
 if (-not $SkipPublish) {
-    dotnet publish (Join-Path $root 'ipchange.csproj') `
+    dotnet publish $projectFile `
         -c $Configuration `
         -r $RuntimeIdentifier `
         --self-contained true `
@@ -87,7 +108,7 @@ New-Item -ItemType Directory -Path $installerOutputDir -Force | Out-Null
 $msiBuildSucceeded = $LASTEXITCODE -eq 0
 
 if (-not $msiBuildSucceeded) {
-    $latestInstaller = Get-LatestArtifact -Pattern 'ipchange-installer-*.msi'
+    $latestInstaller = Get-LatestArtifact -Pattern "$installerOutputName-*.msi"
     if ($AllowExistingMsiFallback -and $null -ne $latestInstaller) {
         Write-Warning "Falha ao gerar um novo MSI nesta maquina. O ultimo MSI valido sera mantido em: $($latestInstaller.FullName)"
     }

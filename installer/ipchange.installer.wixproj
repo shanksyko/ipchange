@@ -6,7 +6,12 @@
     <OutputName>network-configurator-installer</OutputName>
     <AppVersion>1.0.0</AppVersion>
     <PublishedExePath>..\artifacts\release\win-x64\network-configurator.exe</PublishedExePath>
-    <DefineConstants>AppVersion=$(AppVersion);PublishedExePath=$(PublishedExePath)</DefineConstants>
+    <IconPath>..\assets\icon.ico</IconPath>
+    <DefineConstants>AppVersion=$(AppVersion);PublishedExePath=$(PublishedExePath);IconPath=$(IconPath)</DefineConstants>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.UI.wixext" Version="6.0.2" />
+  </ItemGroup>
 
 </Project>

@@ -9,10 +9,22 @@
     <Version>1.0.1</Version>
     <AssemblyName>network-configurator</AssemblyName>
     <RootNamespace>NetworkConfigurator</RootNamespace>
+    <ApplicationIcon>assets\icon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
+    <Content Include="assets\icon.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude leftover artifacts from removed test project -->
+    <Compile Remove="network-configurator.tests\**\*.cs" />
   </ItemGroup>
 
 </Project>

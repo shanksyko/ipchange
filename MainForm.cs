@@ -1,4 +1,4 @@
-using Microsoft.Win32;
+﻿using Microsoft.Win32;
 using System.IO.Pipes;
 using System.Net;
 using System.Net.NetworkInformation;
@@ -131,6 +131,11 @@ internal sealed class MainForm : Form
         Width = 1300;
         Height = 800;
         BackColor = Color.FromArgb(235, 238, 243);
+
+        // Load app icon from assets folder next to the executable
+        var iconPath = Path.Combine(AppContext.BaseDirectory, "assets", "icon.ico");
+        if (File.Exists(iconPath))
+            Icon = new Icon(iconPath);
 
         InitializeComponent();
         Load += async (_, _) => await InitializeRuntimeAsync();
@@ -328,7 +333,8 @@ internal sealed class MainForm : Form
         _trayMenu.Items.Add("Sair", null, (_, _) => ExitApplication());
 
         _notifyIcon.Text = "Network Configurator";
-        _notifyIcon.Icon = SystemIcons.Application;
+        var trayIconPath = Path.Combine(AppContext.BaseDirectory, "assets", "icon.ico");
+        _notifyIcon.Icon = File.Exists(trayIconPath) ? new Icon(trayIconPath) : SystemIcons.Application;
         _notifyIcon.ContextMenuStrip = _trayMenu;
         _notifyIcon.Visible = true;
         _notifyIcon.DoubleClick += (_, _) => ShowMainWindow();
@@ -382,172 +388,224 @@ internal sealed class MainForm : Form
 
     private Control BuildDiagnosticsPanel()
     {
+        // 4-row layout: input bar | category tabs | action bar | output
         var panel = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill,
+            Dock        = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 2,
-            Padding = new Padding(0)
+            RowCount    = 4,
+            Padding     = new Padding(0)
         };
-        panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));       // input bar
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 100));  // category tabs
+        panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));       // action bar
+        panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));  // output box
 
-        var inputRow = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = true,
-            AutoSize = true,
-            Padding = new Padding(0, 0, 0, 6)
-        };
-
-        var hostLabel = new Label { Text = "Host / IP:", AutoSize = true, Margin = new Padding(0, 7, 6, 0) };
-
-        _diagHostTextBox.Width = 220;
-        _diagHostTextBox.PlaceholderText = "google.com ou 8.8.8.8";
-        _diagHostTextBox.Margin = new Padding(0, 4, 8, 0);
-
-        StyleDiagButton(_pingButton, "Ping");
+        // --- Style all buttons ---
+        StyleDiagButton(_pingButton,       "Ping");
         StyleDiagButton(_tracerouteButton, "Traceroute");
-        StyleDiagButton(_dnsLookupButton, "DNS Lookup");
-        StyleDiagButton(_fqdnButton, "FQDN");
-        StyleDiagButton(_routeButton, "Rotas");
-        StyleDiagButton(_dot1xButton, "802.1X");
-        StyleDiagButton(_portScanButton, "Port Scan");
-        StyleDiagButton(_arpButton, "ARP");
-        StyleDiagButton(_httpButton, "HTTP Headers");
-        StyleDiagButton(_sslButton, "SSL/TLS");
-        StyleDiagButton(_whoisButton, "WHOIS");
-        StyleDiagButton(_bandwidthButton, "Bandwidth");
-        StyleDiagButton(_viewLogButton, "Ver Log");
-        StyleDiagButton(_netstatButton, "NetStat");
-        StyleDiagButton(_wifiScanButton, "Wi-Fi");
-        StyleDiagButton(_geoIpButton, "Geo IP");
-        StyleDiagButton(_ntpButton, "NTP");
-        StyleDiagButton(_dnsFlushButton, "Flush DNS");
-        StyleDiagButton(_firewallButton, "Firewall");
-        StyleDiagButton(_proxyButton, "Proxy");
-        StyleDiagButton(_fwProfileButton, "FW Perfil");
-        StyleDiagButton(_tcpTestButton, "TCP Teste");
-        StyleDiagButton(_smbButton, "SMB/Shares");
-        StyleDiagButton(_certButton, "Certificados");
-        StyleDiagButton(_mtuButton, "MTU");
-        StyleDiagButton(_ipconfigButton, "IPConfig");
-        StyleDiagButton(_vpnButton, "VPN");
+        StyleDiagButton(_dnsLookupButton,  "DNS Lookup");
+        StyleDiagButton(_fqdnButton,       "FQDN");
+        StyleDiagButton(_routeButton,      "Rotas");
+        StyleDiagButton(_dot1xButton,      "802.1X");
+        StyleDiagButton(_ntpButton,        "NTP");
+        StyleDiagButton(_dnsFlushButton,   "Flush DNS");
+        StyleDiagButton(_portScanButton,   "Port Scan");
+        StyleDiagButton(_tcpTestButton,    "TCP Teste");
+        StyleDiagButton(_arpButton,        "ARP");
         StyleDiagButton(_subnetScanButton, "Subnet Scan");
-        StyleDiagButton(_smtpTestButton, "SMTP Test");
-        StyleDiagButton(_ifStatsButton, "IF Stats");
+        StyleDiagButton(_httpButton,       "HTTP Headers");
+        StyleDiagButton(_sslButton,        "SSL/TLS");
+        StyleDiagButton(_whoisButton,      "WHOIS");
+        StyleDiagButton(_bandwidthButton,  "Bandwidth");
+        StyleDiagButton(_mtuButton,        "MTU");
+        StyleDiagButton(_netstatButton,    "NetStat");
+        StyleDiagButton(_ipconfigButton,   "IPConfig");
+        StyleDiagButton(_ifStatsButton,    "IF Stats");
+        StyleDiagButton(_vpnButton,        "VPN");
+        StyleDiagButton(_wifiScanButton,   "Wi-Fi");
+        StyleDiagButton(_geoIpButton,      "Geo IP");
+        StyleDiagButton(_firewallButton,   "Firewall");
+        StyleDiagButton(_fwProfileButton,  "FW Perfil");
+        StyleDiagButton(_proxyButton,      "Proxy");
+        StyleDiagButton(_certButton,       "Certificados");
+        StyleDiagButton(_smbButton,        "SMB/Shares");
+        StyleDiagButton(_smtpTestButton,   "SMTP Test");
+        StyleDiagButton(_viewLogButton,    "Ver Log");
         StyleDiagButton(_exportDiagButton, "Exportar");
         StyleDiagButton(_copyOutputButton, "Copiar");
         StyleDiagButton(_cancelDiagButton, "Cancelar");
-        StyleDiagButton(_clearDiagButton, "Limpar");
+        StyleDiagButton(_clearDiagButton,  "Limpar");
 
         _cancelDiagButton.Enabled = false;
         _cancelDiagButton.BackColor = Color.FromArgb(180, 40, 40);
         _cancelDiagButton.ForeColor = Color.White;
         _cancelDiagButton.FlatAppearance.BorderSize = 0;
 
-        _pingButton.Click += async (_, _) => await RunPingAsync();
+        // --- Wire click events ---
+        _pingButton.Click       += async (_, _) => await RunPingAsync();
         _tracerouteButton.Click += async (_, _) => await RunTracerouteAsync();
-        _dnsLookupButton.Click += async (_, _) => await RunDnsLookupAsync();
-        _fqdnButton.Click += async (_, _) => await RunFqdnAsync();
-        _routeButton.Click += async (_, _) => await RunRouteTableAsync();
-        _portRangeTextBox.Width = 160;
-        _portRangeTextBox.PlaceholderText = "80,443,22 ou 1-1024";
-        _portRangeTextBox.Margin = new Padding(0, 4, 6, 0);
-
-        _dot1xButton.Click += async (_, _) => await RunDot1xAsync();
-        _portScanButton.Click += async (_, _) => await RunPortScanAsync();
-        _arpButton.Click += async (_, _) => await RunArpTableAsync();
-        _httpButton.Click += async (_, _) => await RunHttpHeadersAsync();
-        _sslButton.Click += async (_, _) => await RunSslInspectorAsync();
-        _whoisButton.Click += async (_, _) => await RunWhoisAsync();
-        _bandwidthButton.Click += async (_, _) => await RunBandwidthAsync();
-        _viewLogButton.Click += (_, _) => ShowLog();
-        _netstatButton.Click += async (_, _) => await RunNetStatAsync();
-        _wifiScanButton.Click += async (_, _) => await RunWifiScanAsync();
-        _geoIpButton.Click += async (_, _) => await RunGeoIpAsync();
-        _ntpButton.Click += async (_, _) => await RunNtpCheckAsync();
-        _dnsFlushButton.Click += async (_, _) => await RunDnsFlushAsync();
-        _firewallButton.Click += async (_, _) => await RunFirewallRulesAsync();
-        _proxyButton.Click += async (_, _) => await RunProxyDiagAsync();
-        _fwProfileButton.Click += async (_, _) => await RunFirewallProfileAsync();
-        _tcpTestButton.Click += async (_, _) => await RunTcpTestAsync();
-        _smbButton.Click += async (_, _) => await RunSmbDiagAsync();
-        _certButton.Click += async (_, _) => await RunCertStoreDiagAsync();
-        _mtuButton.Click += async (_, _) => await RunMtuDiscoveryAsync();
-        _ipconfigButton.Click += async (_, _) => await RunIpConfigAsync();
-        _vpnButton.Click += async (_, _) => await RunVpnStatusAsync();
+        _dnsLookupButton.Click  += async (_, _) => await RunDnsLookupAsync();
+        _fqdnButton.Click       += async (_, _) => await RunFqdnAsync();
+        _routeButton.Click      += async (_, _) => await RunRouteTableAsync();
+        _dot1xButton.Click      += async (_, _) => await RunDot1xAsync();
+        _ntpButton.Click        += async (_, _) => await RunNtpCheckAsync();
+        _dnsFlushButton.Click   += async (_, _) => await RunDnsFlushAsync();
+        _portScanButton.Click   += async (_, _) => await RunPortScanAsync();
+        _tcpTestButton.Click    += async (_, _) => await RunTcpTestAsync();
+        _arpButton.Click        += async (_, _) => await RunArpTableAsync();
         _subnetScanButton.Click += async (_, _) => await RunSubnetScanAsync();
-        _smtpTestButton.Click += async (_, _) => await RunSmtpTestAsync();
-        _ifStatsButton.Click += async (_, _) => await RunIfStatsAsync();
+        _httpButton.Click       += async (_, _) => await RunHttpHeadersAsync();
+        _sslButton.Click        += async (_, _) => await RunSslInspectorAsync();
+        _whoisButton.Click      += async (_, _) => await RunWhoisAsync();
+        _bandwidthButton.Click  += async (_, _) => await RunBandwidthAsync();
+        _mtuButton.Click        += async (_, _) => await RunMtuDiscoveryAsync();
+        _netstatButton.Click    += async (_, _) => await RunNetStatAsync();
+        _ipconfigButton.Click   += async (_, _) => await RunIpConfigAsync();
+        _ifStatsButton.Click    += async (_, _) => await RunIfStatsAsync();
+        _vpnButton.Click        += async (_, _) => await RunVpnStatusAsync();
+        _wifiScanButton.Click   += async (_, _) => await RunWifiScanAsync();
+        _geoIpButton.Click      += async (_, _) => await RunGeoIpAsync();
+        _firewallButton.Click   += async (_, _) => await RunFirewallRulesAsync();
+        _fwProfileButton.Click  += async (_, _) => await RunFirewallProfileAsync();
+        _proxyButton.Click      += async (_, _) => await RunProxyDiagAsync();
+        _certButton.Click       += async (_, _) => await RunCertStoreDiagAsync();
+        _smbButton.Click        += async (_, _) => await RunSmbDiagAsync();
+        _smtpTestButton.Click   += async (_, _) => await RunSmtpTestAsync();
+        _viewLogButton.Click    += (_, _) => ShowLog();
         _exportDiagButton.Click += (_, _) => ExportDiagnosticOutput();
         _copyOutputButton.Click += (_, _) => CopyDiagnosticOutput();
         _cancelDiagButton.Click += (_, _) => _diagCts?.Cancel();
-        _clearDiagButton.Click += (_, _) => _diagOutputBox.Clear();
+        _clearDiagButton.Click  += (_, _) => _diagOutputBox.Clear();
 
-        // Histórico de comandos com seta ↑/↓
-        _diagHostTextBox.KeyDown += DiagHostTextBox_KeyDown;
+        // --- Input controls (shared across all tabs) ---
+        _diagHostTextBox.Width = 200;
+        _diagHostTextBox.PlaceholderText = "google.com ou 8.8.8.8";
+        _diagHostTextBox.Margin = new Padding(0, 3, 8, 0);
+        _diagHostTextBox.KeyDown  += DiagHostTextBox_KeyDown;
         _diagHostTextBox.KeyPress += (_, e) =>
         {
-            if (e.KeyChar == (char)13) // Enter
-            {
-                e.Handled = true;
-                _pingButton.PerformClick();
-            }
+            if (e.KeyChar == (char)13) { e.Handled = true; _pingButton.PerformClick(); }
         };
 
-        inputRow.Controls.Add(hostLabel);
-        inputRow.Controls.Add(_diagHostTextBox);
-        inputRow.Controls.Add(_pingButton);
-        inputRow.Controls.Add(_tracerouteButton);
-        inputRow.Controls.Add(_dnsLookupButton);
-        inputRow.Controls.Add(_fqdnButton);
-        inputRow.Controls.Add(_routeButton);
-        inputRow.Controls.Add(_dot1xButton);
-        inputRow.Controls.Add(new Label { Text = "Portas:", AutoSize = true, Margin = new Padding(4, 7, 4, 0) });
-        inputRow.Controls.Add(_portRangeTextBox);
-        inputRow.Controls.Add(_portScanButton);
-        inputRow.Controls.Add(_arpButton);
-        inputRow.Controls.Add(_httpButton);
-        inputRow.Controls.Add(_sslButton);
-        inputRow.Controls.Add(_whoisButton);
-        inputRow.Controls.Add(_bandwidthButton);
-        inputRow.Controls.Add(_viewLogButton);
-        inputRow.Controls.Add(_netstatButton);
-        inputRow.Controls.Add(_wifiScanButton);
-        inputRow.Controls.Add(_geoIpButton);
-        inputRow.Controls.Add(_ntpButton);
-        inputRow.Controls.Add(_dnsFlushButton);
-        inputRow.Controls.Add(_firewallButton);
-        inputRow.Controls.Add(_proxyButton);
-        inputRow.Controls.Add(_fwProfileButton);
-        inputRow.Controls.Add(_tcpTestButton);
-        inputRow.Controls.Add(_smbButton);
-        inputRow.Controls.Add(_certButton);
-        inputRow.Controls.Add(_mtuButton);
-        inputRow.Controls.Add(_ipconfigButton);
-        inputRow.Controls.Add(_vpnButton);
-        inputRow.Controls.Add(_subnetScanButton);
-        inputRow.Controls.Add(_smtpTestButton);
-        inputRow.Controls.Add(_ifStatsButton);
-        inputRow.Controls.Add(_exportDiagButton);
-        inputRow.Controls.Add(_copyOutputButton);
-        inputRow.Controls.Add(_cancelDiagButton);
-        inputRow.Controls.Add(_clearDiagButton);
+        _portRangeTextBox.Width = 155;
+        _portRangeTextBox.PlaceholderText = "80,443 ou 1-1024";
+        _portRangeTextBox.Margin = new Padding(0, 3, 6, 0);
 
-        _diagOutputBox.Dock = DockStyle.Fill;
-        _diagOutputBox.ReadOnly = true;
-        _diagOutputBox.BackColor = Color.FromArgb(15, 17, 23);
-        _diagOutputBox.ForeColor = Color.FromArgb(180, 230, 180);
-        _diagOutputBox.Font = new Font("Consolas", 9.5F);
+        // --- Row 1: input bar always visible above tabs ---
+        var inputBar = new FlowLayoutPanel
+        {
+            Dock          = DockStyle.Fill,
+            AutoSize      = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents  = false,
+            BackColor     = Color.FromArgb(240, 243, 248),
+            Padding       = new Padding(8, 6, 8, 6)
+        };
+        inputBar.Controls.Add(new Label { Text = "Host / IP:", AutoSize = true, Margin = new Padding(0, 5, 6, 0), ForeColor = Color.FromArgb(55, 65, 80) });
+        inputBar.Controls.Add(_diagHostTextBox);
+        inputBar.Controls.Add(new Label { Text = "Portas:", AutoSize = true, Margin = new Padding(18, 5, 6, 0), ForeColor = Color.FromArgb(55, 65, 80) });
+        inputBar.Controls.Add(_portRangeTextBox);
+
+        // --- Row 2: category tabs (each with 6-9 buttons, no wrapping) ---
+        var catTabs = new TabControl
+        {
+            Dock    = DockStyle.Fill,
+            Padding = new Point(14, 4),
+        };
+
+        static TabPage MakeCatTab(string title) => new()
+        {
+            Text                  = title,
+            Padding               = new Padding(6, 6, 6, 4),
+            UseVisualStyleBackColor = true
+        };
+
+        var tabRede = MakeCatTab("Rede");
+        var rowRede = MakeDiagRow();
+        rowRede.Controls.AddRange(new Control[]
+        {
+            _pingButton, _tracerouteButton, _dnsLookupButton, _fqdnButton,
+            _routeButton, _dot1xButton, _ntpButton, _dnsFlushButton
+        });
+        tabRede.Controls.Add(rowRede);
+
+        var tabVarredura = MakeCatTab("Varredura");
+        var rowVarredura = MakeDiagRow();
+        rowVarredura.Controls.AddRange(new Control[]
+        {
+            _portScanButton, _tcpTestButton, _arpButton, _subnetScanButton,
+            _httpButton, _sslButton, _whoisButton, _bandwidthButton, _mtuButton
+        });
+        tabVarredura.Controls.Add(rowVarredura);
+
+        var tabSistema = MakeCatTab("Sistema");
+        var rowSistema = MakeDiagRow();
+        rowSistema.Controls.AddRange(new Control[]
+        {
+            _netstatButton, _ipconfigButton, _ifStatsButton,
+            _vpnButton, _wifiScanButton, _geoIpButton
+        });
+        tabSistema.Controls.Add(rowSistema);
+
+        var tabSeg = MakeCatTab("Segurança");
+        var rowSeg = MakeDiagRow();
+        rowSeg.Controls.AddRange(new Control[]
+        {
+            _firewallButton, _fwProfileButton, _proxyButton,
+            _certButton, _smbButton, _smtpTestButton
+        });
+        tabSeg.Controls.Add(rowSeg);
+
+        catTabs.TabPages.AddRange(new TabPage[] { tabRede, tabVarredura, tabSistema, tabSeg });
+
+        // --- Row 3: action bar ---
+        var actionBar = new TableLayoutPanel
+        {
+            Dock        = DockStyle.Fill,
+            ColumnCount = 3,
+            AutoSize    = true,
+            BackColor   = Color.FromArgb(240, 243, 248),
+            Padding     = new Padding(6, 4, 6, 4)
+        };
+        actionBar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        actionBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        actionBar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+
+        var outputTools = new FlowLayoutPanel { AutoSize = true, WrapContents = false, FlowDirection = FlowDirection.LeftToRight, Margin = new Padding(0) };
+        outputTools.Controls.AddRange(new Control[] { _viewLogButton, _exportDiagButton, _copyOutputButton });
+
+        var cancelTools = new FlowLayoutPanel { AutoSize = true, WrapContents = false, FlowDirection = FlowDirection.LeftToRight, Margin = new Padding(0) };
+        cancelTools.Controls.AddRange(new Control[] { _cancelDiagButton, _clearDiagButton });
+
+        actionBar.Controls.Add(outputTools, 0, 0);
+        actionBar.Controls.Add(cancelTools, 2, 0);
+
+        // --- Row 4: output box ---
+        _diagOutputBox.Dock        = DockStyle.Fill;
+        _diagOutputBox.ReadOnly    = true;
+        _diagOutputBox.BackColor   = Color.FromArgb(15, 17, 23);
+        _diagOutputBox.ForeColor   = Color.FromArgb(180, 230, 180);
+        _diagOutputBox.Font        = new Font("Consolas", 9.5F);
         _diagOutputBox.BorderStyle = BorderStyle.None;
-        _diagOutputBox.ScrollBars = RichTextBoxScrollBars.Vertical;
+        _diagOutputBox.ScrollBars  = RichTextBoxScrollBars.Vertical;
 
-        panel.Controls.Add(inputRow, 0, 0);
-        panel.Controls.Add(_diagOutputBox, 0, 1);
+        panel.Controls.Add(inputBar,       0, 0);
+        panel.Controls.Add(catTabs,        0, 1);
+        panel.Controls.Add(actionBar,      0, 2);
+        panel.Controls.Add(_diagOutputBox, 0, 3);
         return panel;
     }
+
+    private static FlowLayoutPanel MakeDiagRow() => new()
+    {
+        Dock          = DockStyle.Fill,
+        AutoSize      = true,
+        FlowDirection = FlowDirection.LeftToRight,
+        WrapContents  = false,
+        Padding       = new Padding(0, 0, 0, 2),
+        Margin        = new Padding(0)
+    };
 
     private static void StyleDiagButton(Button button, string text)
     {
@@ -1437,7 +1495,7 @@ internal sealed class MainForm : Form
             UseShellExecute = false,
             RedirectStandardOutput = true,
             CreateNoWindow = true,
-            StandardOutputEncoding = Encoding.UTF8
+            StandardOutputEncoding = Encoding.GetEncoding(System.Globalization.CultureInfo.CurrentCulture.TextInfo.OEMCodePage)
         });
 
         if (process is null) return result;
@@ -1804,8 +1862,8 @@ internal sealed class MainForm : Form
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             CreateNoWindow = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
+            StandardOutputEncoding = Encoding.GetEncoding(System.Globalization.CultureInfo.CurrentCulture.TextInfo.OEMCodePage),
+            StandardErrorEncoding  = Encoding.GetEncoding(System.Globalization.CultureInfo.CurrentCulture.TextInfo.OEMCodePage),
         };
 
         using var process = System.Diagnostics.Process.Start(startInfo)
@@ -2367,7 +2425,7 @@ internal sealed class MainForm : Form
                 return;
             }
 
-            var files = Directory.GetFiles(logDir, "*.log")
+            var files = Directory.GetFiles(logDir, "*.txt")
                 .OrderByDescending(f => f)
                 .Take(2)
                 .ToArray();
@@ -2931,7 +2989,7 @@ internal sealed class MainForm : Form
         vLayout.Controls.Add(loadRow);
 
         card.Controls.Add(vLayout);
-        outer.Controls.Add(card, 0, 0);
+        outer.Controls.Add(card, 0, 1);
         return outer;
     }
 
@@ -3781,7 +3839,12 @@ internal sealed class MainForm : Form
         }
         catch (OperationCanceledException) { AppendDiagLine("Cancelado.", Color.Yellow); }
         catch (Exception ex) { AppendDiagLine($"Erro: {ex.Message}", Color.OrangeRed); }
-        finally { SetDiagBusy(false); }
+        finally
+        {
+            _diagCts?.Dispose();
+            _diagCts = null;
+            SetDiagBusy(false);
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -3836,7 +3899,12 @@ internal sealed class MainForm : Form
         }
         catch (OperationCanceledException) { AppendDiagLine("Cancelado.", Color.Yellow); }
         catch (Exception ex) { AppendDiagLine($"Erro: {ex.Message}", Color.OrangeRed); }
-        finally { SetDiagBusy(false); }
+        finally
+        {
+            _diagCts?.Dispose();
+            _diagCts = null;
+            SetDiagBusy(false);
+        }
     }
 
     private void ParseAndDisplayFwProfile(string output)
@@ -3921,7 +3989,12 @@ internal sealed class MainForm : Form
         }
         catch (OperationCanceledException) { AppendDiagLine("Cancelado.", Color.Yellow); }
         catch (Exception ex) { AppendDiagLine($"Erro: {ex.Message}", Color.OrangeRed); }
-        finally { SetDiagBusy(false); }
+        finally
+        {
+            _diagCts?.Dispose();
+            _diagCts = null;
+            SetDiagBusy(false);
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -4009,7 +4082,12 @@ internal sealed class MainForm : Form
         }
         catch (OperationCanceledException) { AppendDiagLine("Cancelado.", Color.Yellow); }
         catch (Exception ex) { AppendDiagLine($"Erro: {ex.Message}", Color.OrangeRed); }
-        finally { SetDiagBusy(false); }
+        finally
+        {
+            _diagCts?.Dispose();
+            _diagCts = null;
+            SetDiagBusy(false);
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -4101,7 +4179,12 @@ internal sealed class MainForm : Form
         }
         catch (OperationCanceledException) { AppendDiagLine("Cancelado.", Color.Yellow); }
         catch (Exception ex) { AppendDiagLine($"Erro: {ex.Message}", Color.OrangeRed); }
-        finally { SetDiagBusy(false); }
+        finally
+        {
+            _diagCts?.Dispose();
+            _diagCts = null;
+            SetDiagBusy(false);
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -4194,7 +4277,12 @@ internal sealed class MainForm : Form
         }
         catch (OperationCanceledException) { AppendDiagLine("Cancelado.", Color.Yellow); }
         catch (Exception ex) { AppendDiagLine($"Erro: {ex.Message}", Color.OrangeRed); }
-        finally { SetDiagBusy(false); }
+        finally
+        {
+            _diagCts?.Dispose();
+            _diagCts = null;
+            SetDiagBusy(false);
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -4246,7 +4334,12 @@ internal sealed class MainForm : Form
         }
         catch (OperationCanceledException) { AppendDiagLine("Cancelado.", Color.Yellow); }
         catch (Exception ex) { AppendDiagLine($"Erro: {ex.Message}", Color.OrangeRed); }
-        finally { SetDiagBusy(false); }
+        finally
+        {
+            _diagCts?.Dispose();
+            _diagCts = null;
+            SetDiagBusy(false);
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -4324,7 +4417,12 @@ internal sealed class MainForm : Form
         }
         catch (OperationCanceledException) { AppendDiagLine("Cancelado.", Color.Yellow); }
         catch (Exception ex) { AppendDiagLine($"Erro: {ex.Message}", Color.OrangeRed); }
-        finally { SetDiagBusy(false); }
+        finally
+        {
+            _diagCts?.Dispose();
+            _diagCts = null;
+            SetDiagBusy(false);
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -4425,7 +4523,12 @@ internal sealed class MainForm : Form
         }
         catch (OperationCanceledException) { AppendDiagLine("Cancelado.", Color.Yellow); }
         catch (Exception ex) { AppendDiagLine($"Erro: {ex.Message}", Color.OrangeRed); }
-        finally { SetDiagBusy(false); }
+        finally
+        {
+            _diagCts?.Dispose();
+            _diagCts = null;
+            SetDiagBusy(false);
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -4575,7 +4678,12 @@ internal sealed class MainForm : Form
         }
         catch (OperationCanceledException) { AppendDiagLine("Cancelado.", Color.Yellow); }
         catch (Exception ex) { AppendDiagLine($"Erro: {ex.Message}", Color.OrangeRed); }
-        finally { SetDiagBusy(false); }
+        finally
+        {
+            _diagCts?.Dispose();
+            _diagCts = null;
+            SetDiagBusy(false);
+        }
     }
 
 }
