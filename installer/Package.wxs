@@ -2,7 +2,7 @@
      xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <Package
     Name="Network Configurator"
-    Manufacturer="shanksyko"
+    Manufacturer="Giancarlo Conrado Romualdo"
     Version="$(var.AppVersion)"
     UpgradeCode="E797C1E5-406E-4132-A07C-2D7A1F4E2B16"
     InstallerVersion="500"
@@ -11,17 +11,18 @@
   >
     <SummaryInformation
       Description="Instalador do Network Configurator"
-      Manufacturer="shanksyko"
+      Manufacturer="Giancarlo Conrado Romualdo"
     />
 
     <!-- Instalar / Reparar / Desinstalar via UI padrão WiX -->
     <Icon Id="AppIcon.ico" SourceFile="$(var.IconPath)" />
     <Property Id="ARPPRODUCTICON" Value="AppIcon.ico" />
-    <Property Id="ARPHELPLINK" Value="https://github.com/shanksyko/ipchange" />
-    <Property Id="ARPURLINFOABOUT" Value="https://github.com/shanksyko/ipchange" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/shanksyko/network-configurator" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/shanksyko/network-configurator" />
 
     <ui:WixUI Id="WixUI_InstallDir" />
     <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+    <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
 
     <MajorUpgrade DowngradeErrorMessage="Ja existe uma versao mais recente do Network Configurator instalada." />
     <MediaTemplate EmbedCab="yes" />

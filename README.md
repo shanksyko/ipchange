@@ -9,8 +9,8 @@ Roda como serviço Windows, inicia com o sistema e fica acessível pelo ícone n
 
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D4?logo=windows)
 ![.NET](https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet)
-![License](https://img.shields.io/github/license/shanksyko/ipchange)
-![Release](https://img.shields.io/github/v/release/shanksyko/ipchange)
+![License](https://img.shields.io/github/license/shanksyko/network-configurator)
+![Release](https://img.shields.io/github/v/release/shanksyko/network-configurator)
 
 </div>
 
@@ -31,7 +31,7 @@ Roda como serviço Windows, inicia com o sistema e fica acessível pelo ícone n
 
 ## Instalação (recomendado)
 
-Baixe o instalador `.msi` na [página de releases](https://github.com/shanksyko/ipchange/releases) e execute-o.
+Baixe o instalador `.msi` na [página de releases](https://github.com/shanksyko/network-configurator/releases) e execute-o.
 
 O instalador:
 
